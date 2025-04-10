@@ -99,9 +99,12 @@ class RLHSSearch:
         start_idx = len(self.kernel_times)
 
         for iteration in range(5):
-            refined_block_sizes = np.array([best_block_size - 64, best_block_size, best_block_size + 64])
+            max_block_size = max(kernels_param_space[kernel_name]["block_size"])
+            max_grid_size = max(kernels_param_space[kernel_name]["grid_size"])
+            refined_block_sizes = np.array([max(64, best_block_size - 64), best_block_size, min(max_block_size, best_block_size + 64)])
             step_size = max(5, 60 // (iteration + 1))
-            refined_grid_sizes = np.arange(max(60, best_grid_size - 120), min(960, best_grid_size + 120), step_size)
+            refined_grid_sizes = np.arange(max(60, best_grid_size - 120), min(max_grid_size, best_grid_size + 120), step_size)
+            
             self.param_values = [refined_grid_sizes, refined_block_sizes]
             refined_scaled_samples = self.perform_lhs(20)
 
