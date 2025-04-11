@@ -16,7 +16,7 @@ class BenchmarkBackend:
             "-o", "times_raw", "./ca", 
             "-e", f"o2-{beamtype}-{IR}Hz-128", 
             "--sync", "-g", "--memSize", "30000000000", 
-            "--preloadEvents", "--runs", "2", 
+            "--preloadEvents", "--runs", "4", 
             "--RTCdeterministic", "1", "--RTCenable", "1", 
             "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", "parameters.out"
         ]
@@ -87,7 +87,7 @@ class BenchmarkBackend:
                 if not recording: # skip dummy kernel
                     recording = True
                     continue
-                if start_time is None:
+                if start_time is None and (not run_intervals or int(row["Start_Timestamp"]) > run_intervals[-1][1]):
                     start_time = int(row["Start_Timestamp"])
                 if kernel_name.startswith("krnl_GPUTPCCompressionGatherKernels"):
                     stop_time = int(row["Stop_Timestamp"])
@@ -97,7 +97,7 @@ class BenchmarkBackend:
 
     def _compute_step_duration(self, step_name, kernels_config):
         input_file = os.path.join(self.output_folder, 'times_raw.csv')
-        output_file = os.path.join(self.output_folder, f'{step_name}.csv')
+        output_file = os.path.join(self.output_folder, f'{step_name}_step.csv')
         step_kernels = set(kernels_config.keys())
         run_intervals = self._get_run_time_intervals()
         step_start_times_per_run = defaultdict(list)
@@ -189,8 +189,8 @@ class BenchmarkBackend:
             return self._compute_kernel_mean(kernel_name, block_size, grid_size, beamtype, IR)
 
     def _compute_step_mean_time(self, step_name, kernels_config, beamtype, IR, write_to_csv=True):
-        input_file = os.path.join(self.output_folder, f'{step_name}.csv')
-        output_file = os.path.join(self.output_folder, f'{step_name}_stats.csv')
+        input_file = os.path.join(self.output_folder, f'{step_name}_step.csv')
+        output_file = os.path.join(self.output_folder, f'{step_name}_step_stats.csv')
         with open(input_file, 'r') as infile:
             reader = csv.reader(infile)
             next(reader)

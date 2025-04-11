@@ -154,13 +154,43 @@ def main():
     sampler = RLHSSearch()
     
     kernels_param_space = {
-        "CompressionKernels_step1unattached": {
-            "grid_size": np.arange(60, 901, 60),
-            "block_size": np.array([64, 128, 256, 512])
+        "CreateTrackingData": {
+            "grid_size": 60,
+            "block_size": 128
+        },
+        "StartHitsSorter": {
+            "grid_size": 120,
+            "block_size": 1024
+        },
+        "StartHitsFinder": {
+            "grid_size": 60,
+            "block_size": 1024
+        },
+        "TrackletConstructor": {
+            "grid_size": 120,
+            "block_size": 256
+        },
+        "TrackletSelector": {
+            "grid_size": 480,
+            "block_size": 256
+        },
+        "NeighboursFinder": {
+            "grid_size": 60,
+            "block_size": 1024
+        },
+        "NeighboursCleaner": {
+            "grid_size": 60,
+            "block_size": 896
+        },
+        "ExtrapolationTracking": {
+            "grid_size": 60,
+            "block_size": 256
         },
     }
 
-    sampler.backend.get_step_mean_time("TrackletConstructor", kernels_param_space, "pp", "100k")
+    sampler.backend.get_step_mean_time("TrackletConstructor", kernels_param_space, "pbpb", "5k")
+
+    return
 
     kernels_param_space = {
         "CompressionKernels_step1unattached": {
