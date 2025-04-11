@@ -152,6 +152,18 @@ class RLHSSearch:
 def main():
     configurations = [("pp", "100k"), ("pp", "2M"), ("pbpb", "5k"), ("pbpb", "50k")]
     sampler = RLHSSearch()
+
+    kernels_param_space = {
+        "CompressionKernels_step1unattached": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.array([64, 128, 256, 512])
+        },
+    }
+    for beamtype, IR in configurations:
+        sampler.sample(kernels_param_space, beamtype, IR)
+
+    return
+
     kernels_param_space = {
         "GMMergerCollect": {
             "grid_size": np.arange(60, 901, 60),
@@ -174,15 +186,6 @@ def main():
         "GMMergerSectorRefit": {
             "grid_size": np.arange(60, 901, 60),
             "block_size": np.arange(64, 257, 64)
-        },
-    }
-    for beamtype, IR in configurations:
-        sampler.sample(kernels_param_space, beamtype, IR)
-    
-    kernels_param_space = {
-        "CompressionKernels_step1unattached": {
-            "grid_size": np.arange(60, 901, 60),
-            "block_size": np.arange(64, 513, 64)
         },
     }
     for beamtype, IR in configurations:
