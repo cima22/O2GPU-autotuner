@@ -152,6 +152,15 @@ class RLHSSearch:
 def main():
     configurations = [("pp", "100k"), ("pp", "2M"), ("pbpb", "5k"), ("pbpb", "50k")]
     sampler = RLHSSearch()
+    
+    kernels_param_space = {
+        "CompressionKernels_step1unattached": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.array([64, 128, 256, 512])
+        },
+    }
+
+    sampler.backend.get_step_mean_time("TrackletConstructor", kernels_param_space, "pp", "100k")
 
     kernels_param_space = {
         "CompressionKernels_step1unattached": {

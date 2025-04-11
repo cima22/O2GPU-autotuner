@@ -105,7 +105,7 @@ class BenchmarkBackend:
         with open(input_file, 'r') as infile:
             reader = csv.DictReader(infile)
             for row in reader:
-                kernel_name = row["Kernel_Name"]
+                kernel_name = row["Kernel_Name"].replace("krnl_GPUTPC", "")
                 if kernel_name not in step_kernels:
                     continue
                 start_time = int(row["Start_Timestamp"])
