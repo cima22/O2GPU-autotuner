@@ -106,7 +106,7 @@ class RLHSSearch:
             refined_grid_sizes = np.arange(max(60, best_grid_size - 120), min(max_grid_size, best_grid_size + 120), step_size)
             
             self.param_values = [refined_grid_sizes, refined_block_sizes]
-            refined_scaled_samples = self.perform_lhs(20)
+            refined_scaled_samples = self.perform_lhs(num_samples)
 
             for i, sample in enumerate(refined_scaled_samples):
                 block_size = sample[1]
@@ -188,7 +188,7 @@ def main():
         },
     }
 
-    sampler.backend.get_step_mean_time("TrackletConstructor", kernels_param_space, "pbpb", "5k")
+    sampler.backend.get_step_mean_time("TrackletConstructor", kernels_param_space, "pbpb", "50k")
 
     return
 
