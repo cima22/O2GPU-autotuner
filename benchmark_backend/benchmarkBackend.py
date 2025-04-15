@@ -16,7 +16,7 @@ class BenchmarkBackend:
             "-o", "times_raw", "./ca", 
             "-e", f"o2-{beamtype}-{IR}Hz-128", 
             "--sync", "-g", "--memSize", "30000000000", 
-            "--preloadEvents", "--runs", "4", 
+            "--preloadEvents", "--runs", "2", 
             "--RTCdeterministic", "1", "--RTCenable", "1", 
             "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", "parameters.out"
         ]
