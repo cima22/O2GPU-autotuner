@@ -19,10 +19,9 @@ class BenchmarkBackend:
             "-e", f"o2-{beamtype}-{IR}Hz-128",
             "--sync", "-g", "--memSize", "30000000000",
             "--preloadEvents", "--runs", str(num_runs),
-            "--RTCenable", "1",
-            "--RTCcacheOutput", "0", "--RTCTECHloadLaunchBoundsFromFile", "parameters.out"
+            "--RTCenable", "1", "--RTCTECHloadLaunchBoundsFromFile", "parameters.out"
         ]
-        timeout = 30 + 45 * num_runs # stall check timeout
+        timeout = 30 + 45 * num_runs # stall timeout check
         with open(self.benchmark_backend_log, 'a') as f:
             try:
                 subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, check=True)
@@ -147,26 +146,6 @@ class BenchmarkBackend:
             row = [[block_size, grid_size, beamtype, IR, mean, std_dev]]
             self._write_stats_to_csv(output_file, ["block_size", "grid_size", "beamtype", "IR", "mean", "std_dev"], row)
         return (mean, std_dev)
-
-    def _compute_MergerCollect_mean(self, block_size, grid_size, beamtype, IR, write_to_csv=True):
-        input_file = os.path.join(self.output_folder, 'GMMergerCollect.csv')
-        output_file = os.path.join(self.output_folder, 'GMMergerCollect_stats.csv')
-        with open(input_file, 'r') as infile:
-            reader = csv.reader(infile)
-            next(reader)
-            data = [float(row[1]) for row in reader]
-        results = []
-        stats = []
-        for i, proc_type in enumerate(["sync", "async"]):
-            subset = data[i::2]
-            mean = np.mean(subset)
-            std_dev = np.std(subset)
-            row = [block_size, grid_size, beamtype, IR, proc_type, mean, std_dev]
-            stats.append((mean, std_dev))
-            results.append(row)
-        if write_to_csv:
-            self._write_stats_to_csv(output_file, ["block_size", "grid_size", "beamtype", "IR", "proc_type", "mean", "std_dev"], results)
-        return stats[0]
 
     def _compute_MergerTrackFit_mean(self, block_size, grid_size, beamtype, IR, write_to_csv=True):
         input_file = os.path.join(self.output_folder, 'GMMergerTrackFit.csv')
