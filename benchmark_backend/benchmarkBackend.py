@@ -11,27 +11,34 @@ class BenchmarkBackend:
             os.makedirs(self.output_folder)
 
     def profile_benchmark(self, beamtype, IR):
+        num_runs = 2
         command = [
-            "rocprofv2", "--hip-activity", "-d", self.output_folder, 
-            "-o", "times_raw", "./ca", 
-            "-e", f"o2-{beamtype}-{IR}Hz-128", 
-            "--sync", "-g", "--memSize", "30000000000", 
-            "--preloadEvents", "--runs", "2", 
-            "--RTCenable", "1", 
-            "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", "parameters.out"
+            "rocprofv2", "--hip-activity", "-d", self.output_folder,
+            "-o", "times_raw", "./ca",
+            "-e", f"o2-{beamtype}-{IR}Hz-128",
+            "--sync", "-g", "--memSize", "30000000000",
+            "--preloadEvents", "--runs", str(num_runs),
+            "--RTCenable", "1",
+            "--RTCcacheOutput", "0", "--RTCTECHloadLaunchBoundsFromFile", "parameters.out"
         ]
         log_file = os.path.join(self.output_folder, 'time_kernels.log')
+        timeout = 30 + 45 * num_runs # stall check timeout
         with open(log_file, 'a') as f:
-            subprocess.run(command, stdout=f, stderr=subprocess.STDOUT)
-        if os.path.exists(self.output_folder):
-            if os.path.isfile(os.path.join(self.output_folder, 'hip_api_trace_times_raw.csv')):
-                os.remove(os.path.join(self.output_folder, 'hip_api_trace_times_raw.csv'))
+            try:
+                subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, check=True)
+            except subprocess.TimeoutExpired:
+                f.write("ERROR: Benchmark stalled and timed out.\n")
+                raise TimeoutError("Benchmark timed out")
+            except subprocess.CalledProcessError as e:
+                f.write(f"ERROR: Benchmark crashed. Return code: {e.returncode}\n")
+                raise RuntimeError(f"Benchmark crashed with return code {e.returncode}")
 
-            hcc_ops_file = os.path.join(self.output_folder, 'hcc_ops_trace_times_raw.csv')
-            if os.path.isfile(hcc_ops_file):
-                os.rename(hcc_ops_file, os.path.join(self.output_folder, 'times_raw.csv'))
-        else:
-            raise FileNotFoundError(f"The directory '{self.output_folder}' does not exist.")
+        if os.path.isfile(os.path.join(self.output_folder, 'hip_api_trace_times_raw.csv')):
+            os.remove(os.path.join(self.output_folder, 'hip_api_trace_times_raw.csv'))
+
+        hcc_ops_file = os.path.join(self.output_folder, 'hcc_ops_trace_times_raw.csv')
+        if os.path.isfile(hcc_ops_file):
+            os.rename(hcc_ops_file, os.path.join(self.output_folder, 'times_raw.csv'))
 
     def update_param_file(self, kernels_config, filename="include/testParam.h"):
         for kernel_name, config in kernels_config.items():
@@ -205,13 +212,21 @@ class BenchmarkBackend:
     def get_kernel_mean_time(self, kernel_name, block_size, grid_size, beamtype, IR):
         kernles_config = {kernel_name: {"block_size": block_size, "grid_size": grid_size}}
         self.update_param_file(kernles_config)
-        self.profile_benchmark(beamtype, IR)
-        self._compute_durations(kernel_name)        
+        try:
+            self.profile_benchmark(beamtype, IR)
+        except (TimeoutError, RuntimeError) as e:
+            print(f"Error during benchmark: {e}")
+            return (float('inf'), 0.0)
+        self._compute_durations(kernel_name)
         return self._compute_mean_time(kernel_name, block_size, grid_size, beamtype, IR)
 
     def get_step_mean_time(self, step_name, kernels_config, beamtype, IR):
         self.update_param_file(kernels_config)
-        self.profile_benchmark(beamtype, IR)
+        try:
+            self.profile_benchmark(beamtype, IR)
+        except (TimeoutError, RuntimeError) as e:
+            print(f"Error during step benchmark: {e}")
+            return (float('inf'), 0.0)
         for kernel_name in kernels_config.keys():
             self._compute_durations(kernel_name)
         self._compute_step_duration(step_name, kernels_config)

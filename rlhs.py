@@ -259,17 +259,17 @@ class RLHSSearch:
 
 def main():
     configurations = [("pp", "100k"), ("pp", "2M"), ("pbpb", "5k"), ("pbpb", "50k")]
-    configurations = [("pbpb", "50k")]
+    configurations = [("pp", "100k")]
     sampler = RLHSSearch()
 
     kernels_param_space = {
         "CompressionKernels_step0attached": {
-            "grid_size": 60,
+            "grid_size": 720,
             "block_size": 192
         },
         "GMMergerFollowLoopers": {
-            "grid_size": 128,
-            "block_size": 720
+            "grid_size": 600,
+            "block_size": 64
         },
     }
     for conf in configurations:
