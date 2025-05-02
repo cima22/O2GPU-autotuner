@@ -7,6 +7,7 @@ from collections import defaultdict
 class BenchmarkBackend:
     def __init__(self, output_folder):
         self.output_folder = output_folder
+        self.benchmark_backend_log = os.path.join(self.output_folder, 'benchmark_backend.log')
         if not os.path.exists(self.output_folder):
             os.makedirs(self.output_folder)
 
@@ -21,9 +22,8 @@ class BenchmarkBackend:
             "--RTCenable", "1",
             "--RTCcacheOutput", "0", "--RTCTECHloadLaunchBoundsFromFile", "parameters.out"
         ]
-        log_file = os.path.join(self.output_folder, 'time_kernels.log')
         timeout = 30 + 45 * num_runs # stall check timeout
-        with open(log_file, 'a') as f:
+        with open(self.benchmark_backend_log, 'a') as f:
             try:
                 subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, check=True)
             except subprocess.TimeoutExpired:
@@ -49,8 +49,7 @@ class BenchmarkBackend:
                 f"{{s/\\s[0-9][0-9]*,\\? *[0-9]*/ {block_size}, {grid_size//60}/}}' {filename}")
             os.system(sed_command)
         root_command = "echo -e '#define PARAMETER_FILE \"'`pwd`'/include/testParam.h\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"
-        log_file = os.path.join(self.output_folder, 'time_kernels.log')
-        with open(log_file, 'a') as f:
+        with open(self.benchmark_backend_log, 'a') as f:
             subprocess.run(root_command, shell=True, stdout=f, stderr=subprocess.STDOUT)
 
     def _compute_durations(self, search_string):
