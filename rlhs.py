@@ -18,7 +18,7 @@ class RLHSSearch:
         
     @staticmethod
     def log(message):
-        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}")
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}", flush=True)
 
     @staticmethod
     def create_unique_folder(base_name):
@@ -258,8 +258,25 @@ class RLHSSearch:
             return self._sample_step(kernels_param_space, beamtype, IR, num_samples, step_name)
 
 def main():
-    configurations = [("pp", "100k")]
+    configurations = [("pp", "100k"), ("pp", "2M"), ("pbpb", "5k"), ("pbpb", "50k")]
+    configurations = [("pbpb", "50k")]
     sampler = RLHSSearch()
+
+    kernels_param_space = {
+        "CompressionKernels_step0attached": {
+            "grid_size": 60,
+            "block_size": 192
+        },
+        "GMMergerFollowLoopers": {
+            "grid_size": 128,
+            "block_size": 720
+        },
+    }
+    for conf in configurations:
+        beamtype, ir = conf
+        mean, std_dev = sampler.backend.get_step_mean_time("multi_kernel", kernels_param_space, beamtype, ir)
+        print(f"Step default mean time for {beamtype} at {ir}Hz: {mean:.2f} ms ± {std_dev:.2f} ms")
+    return
 
     kernels_param_space = {
         "CompressionKernels_step0attached": {
@@ -272,7 +289,48 @@ def main():
         },
     }
 
-    sampler.sample(kernels_param_space, beamtype="pp", IR="100k", step_name="multi_kernel")
+    for conf in configurations:
+        beamtype, ir = conf
+        sampler.sample(kernels_param_space, beamtype=beamtype, IR=ir, num_samples=40)
+
+    return
+
+    kernels_param_space = {
+        "GMMergerTrackFit": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 257, 64)
+        },
+    }
+
+    for conf in configurations:
+        beamtype, ir = conf
+        sampler.sample(kernels_param_space, beamtype=beamtype, IR=ir, num_samples=20)
+
+    return
+
+    kernels_param_space = {
+        "GMMergerSectorRefit": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 257, 64)
+        },
+    }
+
+    for conf in configurations:
+        beamtype, ir = conf
+        sampler.sample(kernels_param_space, beamtype=beamtype, IR=ir, num_samples=20)
+
+    kernels_param_space = {
+        "GMMergerCollect": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 513, 64)
+        },
+    }
+
+    for conf in configurations:
+        beamtype, ir = conf
+        sampler.sample(kernels_param_space, beamtype=beamtype, IR=ir, num_samples=20)
+
+    return
 
 if __name__ == "__main__":
     main()

@@ -17,7 +17,7 @@ class BenchmarkBackend:
             "-e", f"o2-{beamtype}-{IR}Hz-128", 
             "--sync", "-g", "--memSize", "30000000000", 
             "--preloadEvents", "--runs", "2", 
-            "--RTCdeterministic", "1", "--RTCenable", "1", 
+            "--RTCenable", "1", 
             "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", "parameters.out"
         ]
         log_file = os.path.join(self.output_folder, 'time_kernels.log')
@@ -41,7 +41,7 @@ class BenchmarkBackend:
                 f"sed -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} \\s*[0-9][0-9]*,\\? *[0-9]*/"
                 f"{{s/\\s[0-9][0-9]*,\\? *[0-9]*/ {block_size}, {grid_size//60}/}}' {filename}")
             os.system(sed_command)
-        root_command = "root -l -q -b src/GPU/GPUTracking/Standalone/tools/dumpGPUDefParam.C"
+        root_command = "echo -e '#define PARAMETER_FILE \"'`pwd`'/include/testParam.h\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"
         log_file = os.path.join(self.output_folder, 'time_kernels.log')
         with open(log_file, 'a') as f:
             subprocess.run(root_command, shell=True, stdout=f, stderr=subprocess.STDOUT)
