@@ -12,7 +12,7 @@ class BenchmarkBackend:
             os.makedirs(self.output_folder)
 
     def profile_benchmark(self, beamtype, IR):
-        num_runs = 2
+        num_runs = 3
         command = [
             "rocprofv2", "--hip-activity", "-d", self.output_folder,
             "-o", "times_raw", "./ca",
@@ -43,9 +43,9 @@ class BenchmarkBackend:
         for kernel_name, config in kernels_config.items():
             block_size = config["block_size"]
             grid_size = config["grid_size"]
-            sed_command = (
-                f"sed -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} \\s*[0-9][0-9]*,\\? *[0-9]*/"
-                f"{{s/\\s[0-9][0-9]*,\\? *[0-9]*/ {block_size}, {grid_size//60}/}}' {filename}")
+            sed_prefix = f"sed -E -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} /"
+            sed_replacement = f"{block_size}, {grid_size // 60}" if grid_size % 60 == 0 else f"{block_size}, {grid_size // 60}, {grid_size}"
+            sed_command = f"{sed_prefix}s/\\s[0-9]+(,[ ]*[0-9]+){{0,2}}/ {sed_replacement}/' {filename}"
             os.system(sed_command)
         root_command = "echo -e '#define PARAMETER_FILE \"'`pwd`'/include/testParam.h\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"
         with open(self.benchmark_backend_log, 'a') as f:

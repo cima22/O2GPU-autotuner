@@ -262,23 +262,123 @@ class RLHSSearch:
 
 def main():
     configurations = [("pp", "100k"), ("pp", "2M"), ("pbpb", "5k"), ("pbpb", "50k")]
-    configurations = [("pp", "100k")]
+    configurations = [("pbpb", "5k")]
     sampler = RLHSSearch()
 
     kernels_param_space = {
-        "CompressionKernels_step0attached": {
+        "TrackletConstructor": {
             "grid_size": 720,
+            "block_size": 512
+        },
+        "TrackletSelector": {
+            "grid_size": 360,
+            "block_size": 128
+        },
+        "NeighboursCleaner": {
+            "grid_size": 240,
+            "block_size": 448
+        },
+        "NeighboursFinder": {
+            "grid_size": 720,
+            "block_size": 512
+        },
+        "StartHitsSorter": {
+            "grid_size": 60,
+            "block_size": 256
+        },
+        "CreateTrackingData": {
+            "grid_size": 540,
+            "block_size": 192
+        },
+        "StartHitsFinder": {
+            "grid_size": 600,
+            "block_size": 320
+        },
+        "ExtrapolationTracking": {
+            "grid_size": 660,
+            "block_size": 448
+        },
+    }
+
+    for conf in configurations:
+        beamtype, ir = conf
+        mean, std_dev = sampler.backend.get_step_mean_time("multi_kernel", kernels_param_space, beamtype, ir)
+        print(f"Step default mean time for {beamtype} at {ir}Hz: {mean:.2f} ms ± {std_dev:.2f} ms")
+    return
+
+    kernels_param_space = {
+        "CompressionKernels_step0attached": {
+            "grid_size": 840,
+            "block_size": 64
+        },
+        "GMMergerFollowLoopers": {
+            "grid_size": 120,
+            "block_size": 256
+        },
+    }
+    for conf in configurations:
+        beamtype, ir = conf
+        mean, std_dev = sampler.backend.get_step_mean_time("multi_kernel", kernels_param_space, beamtype, ir)
+        print(f"Step default mean time for {beamtype} at {ir}Hz_1: {mean:.2f} ms ± {std_dev:.2f} ms")
+    
+    return
+
+    kernels_param_space = {
+        "CompressionKernels_step0attached": {
+            "grid_size": 120,
             "block_size": 192
         },
         "GMMergerFollowLoopers": {
-            "grid_size": 600,
-            "block_size": 64
+            "grid_size": 720,
+            "block_size": 128
         },
     }
     for conf in configurations:
         beamtype, ir = conf
         mean, std_dev = sampler.backend.get_step_mean_time("multi_kernel", kernels_param_space, beamtype, ir)
         print(f"Step default mean time for {beamtype} at {ir}Hz: {mean:.2f} ms ± {std_dev:.2f} ms")
+    
+    return
+
+    kernels_param_space = {
+        "TrackletConstructor": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 1025, 64)
+        },
+        "TrackletSelector": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 1025, 64)
+        },
+        "NeighboursCleaner": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 1025, 64)
+        },
+        "NeighboursFinder": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 1025, 64)
+        },
+        "StartHitsSorter": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 1025, 64)
+        },
+        "CreateTrackingData": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 1025, 64)
+        },
+        "StartHitsFinder": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 1025, 64)
+        },
+        "ExtrapolationTracking": {
+            "grid_size": np.arange(60, 901, 60),
+            "block_size": np.arange(64, 1025, 64)
+        },
+    }
+
+    for conf in configurations:
+        beamtype, ir = conf
+        sampler.sample(kernels_param_space, beamtype=beamtype, IR=ir, num_samples=160, step_name="tracklet")
+
     return
 
     kernels_param_space = {
@@ -296,6 +396,22 @@ def main():
         beamtype, ir = conf
         sampler.sample(kernels_param_space, beamtype=beamtype, IR=ir, num_samples=40)
 
+    return
+
+    kernels_param_space = {
+        "CompressionKernels_step0attached": {
+            "grid_size": 720,
+            "block_size": 192
+        },
+        "GMMergerFollowLoopers": {
+            "grid_size": 600,
+            "block_size": 64
+        },
+    }
+    for conf in configurations:
+        beamtype, ir = conf
+        mean, std_dev = sampler.backend.get_step_mean_time("multi_kernel", kernels_param_space, beamtype, ir)
+        print(f"Step default mean time for {beamtype} at {ir}Hz: {mean:.2f} ms ± {std_dev:.2f} ms")
     return
 
     kernels_param_space = {
