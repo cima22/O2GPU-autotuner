@@ -40,13 +40,28 @@ class BenchmarkBackend:
             os.rename(hcc_ops_file, os.path.join(self.output_folder, 'times_raw.csv'))
 
     def update_param_file(self, kernels_config, filename="include/testParam.h"):
-        for kernel_name, config in kernels_config.items():
+        macro_updates = []
+        kernel_updates = []
+
+        for key, value in kernels_config.items():
+            if isinstance(value, dict) and "block_size" in value and "grid_size" in value:
+                kernel_updates.append((key, value))
+            elif key.startswith("PAR_"):
+                macro_name = f"GPUCA_{key}"
+                macro_updates.append((macro_name, value))
+
+        for macro_name, macro_value in macro_updates:
+            sed_command = f"sed -E -i 's|^#define {macro_name} .*|#define {macro_name} {macro_value}|' {filename}"
+            os.system(sed_command)
+
+        for kernel_name, config in kernel_updates:
             block_size = config["block_size"]
             grid_size = config["grid_size"]
             sed_prefix = f"sed -E -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} /"
             sed_replacement = f"{block_size}, {grid_size // 60}" if grid_size % 60 == 0 else f"{block_size}, {grid_size // 60}, {grid_size}"
             sed_command = f"{sed_prefix}s/\\s[0-9]+(,[ ]*[0-9]+){{0,2}}/ {sed_replacement}/' {filename}"
             os.system(sed_command)
+
         root_command = "echo -e '#define PARAMETER_FILE \"'`pwd`'/include/testParam.h\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"
         with open(self.benchmark_backend_log, 'a') as f:
             subprocess.run(root_command, shell=True, stdout=f, stderr=subprocess.STDOUT)
