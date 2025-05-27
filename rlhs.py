@@ -262,7 +262,7 @@ class RLHSSearch:
 
 def main():
     configurations = [("pp", "100k"), ("pp", "2M"), ("pbpb", "5k"), ("pbpb", "50k")]
-    configurations = [("pbpb", "5k")]
+    configurations = [("pbpb", "50k")]
     sampler = RLHSSearch()
 
     kernels_param_space = {

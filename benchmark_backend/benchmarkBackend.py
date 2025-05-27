@@ -10,18 +10,24 @@ class BenchmarkBackend:
         self.benchmark_backend_log = os.path.join(self.output_folder, 'benchmark_backend.log')
         if not os.path.exists(self.output_folder):
             os.makedirs(self.output_folder)
+        self.num_runs = 2
+        self.dataset = None
+        self.param_dump = "parameters.out"
 
-    def profile_benchmark(self, beamtype, IR):
-        num_runs = 3
+    def profile_benchmark(self, beamtype=None, IR=None):
+        if beamtype is not None and IR is not None:
+            dataset = f"o2-{beamtype}-{IR}Hz-128"
+        else:
+            dataset = self.dataset
         command = [
             "rocprofv2", "--hip-activity", "-d", self.output_folder,
             "-o", "times_raw", "./ca",
-            "-e", f"o2-{beamtype}-{IR}Hz-128",
+            "-e", dataset,
             "--sync", "-g", "--memSize", "30000000000",
-            "--preloadEvents", "--runs", str(num_runs),
-            "--RTCenable", "1", "--RTCTECHloadLaunchBoundsFromFile", "parameters.out"
+            "--preloadEvents", "--runs", str(self.num_runs),
+            "--RTCenable", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump
         ]
-        timeout = 30 + 45 * num_runs # stall timeout check
+        timeout = 30 + 45 * self.num_runs # stall timeout check
         with open(self.benchmark_backend_log, 'a') as f:
             try:
                 subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, check=True)
@@ -213,7 +219,7 @@ class BenchmarkBackend:
         self._compute_durations(kernel_name)
         return self._compute_mean_time(kernel_name, block_size, grid_size, beamtype, IR)
 
-    def get_step_mean_time(self, step_name, kernels_config, beamtype, IR):
+    def get_step_mean_time(self, step_name, kernels_config, beamtype=None, IR=None):
         self.update_param_file(kernels_config)
         try:
             self.profile_benchmark(beamtype, IR)
