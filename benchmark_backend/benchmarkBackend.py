@@ -3,6 +3,7 @@ import subprocess
 import csv
 import numpy as np
 from collections import defaultdict
+import re
 
 class BenchmarkBackend:
     def __init__(self, output_folder):
@@ -16,14 +17,14 @@ class BenchmarkBackend:
 
     def profile_benchmark(self, beamtype=None, IR=None):
         if beamtype is not None and IR is not None:
-            dataset = f"o2-{beamtype}-{IR}Hz-128"
+            dataset = f"o2-{beamtype}-{IR}Hz-32"
         else:
             dataset = self.dataset
         command = [
             "rocprofv2", "--hip-activity", "-d", self.output_folder,
             "-o", "times_raw", "./ca",
             "-e", dataset,
-            "--sync", "-g", "--memSize", "30000000000",
+            "--sync", "-g", "--memSize", "15000000000",
             "--preloadEvents", "--runs", str(self.num_runs),
             "--RTCenable", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump
         ]
@@ -50,7 +51,7 @@ class BenchmarkBackend:
         kernel_updates = []
 
         for key, value in kernels_config.items():
-            if isinstance(value, dict) and "block_size" in value and "grid_size" in value:
+            if isinstance(value, dict) and ("block_size" in value or "grid_size" in value):
                 kernel_updates.append((key, value))
             elif key.startswith("PAR_"):
                 macro_name = f"GPUCA_{key}"
@@ -61,12 +62,28 @@ class BenchmarkBackend:
             os.system(sed_command)
 
         for kernel_name, config in kernel_updates:
-            block_size = config["block_size"]
-            grid_size = config["grid_size"]
-            sed_prefix = f"sed -E -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} /"
-            sed_replacement = f"{block_size}, {grid_size // 60}" if grid_size % 60 == 0 else f"{block_size}, {grid_size // 60}, {grid_size}"
-            sed_command = f"{sed_prefix}s/\\s[0-9]+(,[ ]*[0-9]+){{0,2}}/ {sed_replacement}/' {filename}"
-            os.system(sed_command)
+            if "block_size" in config:
+                block_size = config["block_size"]
+                sed_cmd_block = (
+                    f"sed -E -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} /"
+                    f"s/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} +[0-9]+/\\#define GPUCA_LB_GPUTPC{kernel_name} {block_size}/' {filename}"
+                )
+                os.system(sed_cmd_block)
+            if "grid_size" in config:
+                grid_size = config["grid_size"]
+                if grid_size % 60 == 0:
+                    grid_replacement = f"{grid_size // 60}"
+                    sed_cmd_grid = (
+                        f"sed -E -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} /"
+                        f"s/([0-9]+), *([0-9]+)(, *[0-9]+)?/\\1, {grid_replacement}/' {filename}"
+                    )
+                else:
+                    grid_replacement = f"{grid_size // 60}, {grid_size}"
+                    sed_cmd_grid = (
+                        f"sed -E -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} /"
+                        f"s/([0-9]+)(, *[0-9]+)?(, *[0-9]+)?/\\1, {grid_replacement}/' {filename}"
+                    )
+                os.system(sed_cmd_grid)
 
         root_command = "echo -e '#define PARAMETER_FILE \"'`pwd`'/include/testParam.h\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"
         with open(self.benchmark_backend_log, 'a') as f:
@@ -230,3 +247,35 @@ class BenchmarkBackend:
             self._compute_durations(kernel_name)
         self._compute_step_duration(step_name, kernels_config)
         return self._compute_step_mean_time(step_name, kernels_config, beamtype, IR)
+    
+    def get_sync_mean_time(self, dump=None, beamtype=None, IR=None, dataset=None):
+        self.param_dump = dump or self.param_dump or "param_dumps/default.par"
+        dataset = dataset or (f"o2-{beamtype}-{IR}Hz-32" if beamtype and IR else self.dataset)
+        command = [
+            "./ca", "-e", dataset,
+            "--sync", "-g", "--memSize", "15000000000",
+            "--preloadEvents", "--runs", str(self.num_runs),
+            "--RTCenable", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump
+        ]
+        timeout = 30 + 45 * self.num_runs  # stall timeout check
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=True)
+            output = result.stdout
+        except subprocess.TimeoutExpired:
+            with open(self.benchmark_backend_log, 'a') as f:
+                f.write("ERROR: Benchmark stalled and timed out.\n")
+            raise TimeoutError("Benchmark timed out")
+        except subprocess.CalledProcessError as e:
+            with open(self.benchmark_backend_log, 'a') as f:
+                f.write(f"ERROR: Benchmark crashed. Return code: {e.returncode}\n")
+            raise RuntimeError(f"Benchmark crashed with return code {e.returncode}")
+        
+        with open(self.benchmark_backend_log, 'a') as f:
+            f.write(output)
+
+        wall_times = re.findall(r"Total Wall Time:\s+([0-9]+) us", output)
+        wall_times = [int(x) for x in wall_times]
+        if not wall_times:
+            return float('inf'), 0.0
+        wall_times_ms = np.array(wall_times) / 1000.0 
+        return np.mean(wall_times_ms), np.std(wall_times_ms)

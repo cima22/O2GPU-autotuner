@@ -267,20 +267,18 @@ def main():
 
     kernels_param_space = {
         "TrackletConstructor": {
-            "grid_size": 720,
-            "block_size": 512
+            "grid_size": 60,
+            "block_size": 64
         },
         "TrackletSelector": {
             "grid_size": 360,
             "block_size": 128
         },
         "NeighboursCleaner": {
-            "grid_size": 240,
-            "block_size": 448
+            "block_size": 64,
         },
         "NeighboursFinder": {
-            "grid_size": 720,
-            "block_size": 512
+            "grid_size": 128
         },
         "StartHitsSorter": {
             "grid_size": 60,
@@ -291,8 +289,7 @@ def main():
             "block_size": 192
         },
         "StartHitsFinder": {
-            "grid_size": 600,
-            "block_size": 320
+            "block_size": 123
         },
         "ExtrapolationTracking": {
             "grid_size": 660,
@@ -300,6 +297,8 @@ def main():
         },
     }
 
+    sampler.backend.update_param_file(kernels_param_space)
+    return
     for conf in configurations:
         beamtype, ir = conf
         mean, std_dev = sampler.backend.get_step_mean_time("multi_kernel", kernels_param_space, beamtype, ir)
