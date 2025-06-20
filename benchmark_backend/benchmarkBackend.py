@@ -65,24 +65,20 @@ class BenchmarkBackend:
             if "block_size" in config:
                 block_size = config["block_size"]
                 sed_cmd_block = (
-                    f"sed -E -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} /"
-                    f"s/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} +[0-9]+/\\#define GPUCA_LB_GPUTPC{kernel_name} {block_size}/' {filename}"
+                    f"sed -E -i '/^\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+/"
+                    f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+)[0-9]+/\\1{block_size}/' {filename}"
                 )
                 os.system(sed_cmd_block)
             if "grid_size" in config:
                 grid_size = config["grid_size"]
                 if grid_size % 60 == 0:
                     grid_replacement = f"{grid_size // 60}"
-                    sed_cmd_grid = (
-                        f"sed -E -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} /"
-                        f"s/([0-9]+), *([0-9]+)(, *[0-9]+)?/\\1, {grid_replacement}/' {filename}"
-                    )
                 else:
                     grid_replacement = f"{grid_size // 60}, {grid_size}"
-                    sed_cmd_grid = (
-                        f"sed -E -i '/^\\s*#define GPUCA_LB_GPUTPC{kernel_name} /"
-                        f"s/([0-9]+)(, *[0-9]+)?(, *[0-9]+)?/\\1, {grid_replacement}/' {filename}"
-                    )
+                sed_cmd_grid = (
+                    f"sed -E -i '/^\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+/"
+                    f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+)(, *[0-9]+)*(, *[0-9]+)*/\\1, {grid_replacement}/' {filename}"
+                )
                 os.system(sed_cmd_grid)
 
         root_command = "echo -e '#define PARAMETER_FILE \"'`pwd`'/include/testParam.h\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"

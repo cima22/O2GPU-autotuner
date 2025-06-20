@@ -266,35 +266,19 @@ def main():
     sampler = RLHSSearch()
 
     kernels_param_space = {
-        "TrackletConstructor": {
-            "grid_size": 60,
-            "block_size": 64
-        },
-        "TrackletSelector": {
-            "grid_size": 360,
-            "block_size": 128
-        },
-        "NeighboursCleaner": {
-            "block_size": 64,
-        },
-        "NeighboursFinder": {
-            "grid_size": 128
-        },
-        "StartHitsSorter": {
-            "grid_size": 60,
-            "block_size": 256
-        },
-        "CreateTrackingData": {
-            "grid_size": 540,
-            "block_size": 192
-        },
-        "StartHitsFinder": {
-            "block_size": 123
-        },
-        "ExtrapolationTracking": {
-            "grid_size": 660,
-            "block_size": 448
-        },
+        'CFClusterizer': {'block_size': 8888888},
+        'CFDecodeZSDenseLink': {'grid_size': 840},
+        'CFNoiseSuppression_noiseSuppression': {'grid_size': 480},
+        'CFDeconvolution': {'grid_size': 300},
+        'CFPeakFinder': {'grid_size': 120},
+        'CFCheckPadBaseline': {'grid_size': 120},
+        'CFStreamCompaction_compactDigits': {'grid_size': 60},
+        'CFNoiseSuppression_updatePeaks': {'grid_size': 480},
+        'CFStreamCompaction_scanStart': {'grid_size': 60},
+        'CFGather': {'grid_size': 660},
+        'CFStreamCompaction_scanUp': {'grid_size': 120},
+        'CFStreamCompaction_scanTop': {'grid_size': 780},
+        'CFStreamCompaction_scanDown': {'grid_size': 300},
     }
 
     sampler.backend.update_param_file(kernels_param_space)
