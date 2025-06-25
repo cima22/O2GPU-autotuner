@@ -46,7 +46,8 @@ class BenchmarkBackend:
         if os.path.isfile(hcc_ops_file):
             os.rename(hcc_ops_file, os.path.join(self.output_folder, 'times_raw.csv'))
 
-    def update_param_file(self, kernels_config, filename="include/testParam.h"):
+    @staticmethod
+    def update_param_file(kernels_config, filename="include/testParam.h", log_file=None):
         macro_updates = []
         kernel_updates = []
 
@@ -81,9 +82,12 @@ class BenchmarkBackend:
                 )
                 os.system(sed_cmd_grid)
 
-        root_command = "echo -e '#define PARAMETER_FILE \"'`pwd`'/include/testParam.h\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"
-        with open(self.benchmark_backend_log, 'a') as f:
-            subprocess.run(root_command, shell=True, stdout=f, stderr=subprocess.STDOUT)
+        root_command = f"echo -e '#define PARAMETER_FILE \"'`pwd`'/{filename}\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"
+        if log_file is not None:
+            with open(log_file, 'a') as f:
+                subprocess.run(root_command, shell=True, stdout=f, stderr=subprocess.STDOUT)
+        else:
+            subprocess.run(root_command, shell=True)
 
     def _compute_durations(self, search_string):
         input_file = os.path.join(self.output_folder, 'times_raw.csv')
@@ -222,8 +226,8 @@ class BenchmarkBackend:
         return (mean, std_dev)
     
     def get_kernel_mean_time(self, kernel_name, block_size, grid_size, beamtype, IR):
-        kernles_config = {kernel_name: {"block_size": block_size, "grid_size": grid_size}}
-        self.update_param_file(kernles_config)
+        kernels_config = {kernel_name: {"block_size": block_size, "grid_size": grid_size}}
+        BenchmarkBackend.update_param_file(kernels_config, log_file=self.benchmark_backend_log)
         try:
             self.profile_benchmark(beamtype, IR)
         except (TimeoutError, RuntimeError) as e:
@@ -233,7 +237,7 @@ class BenchmarkBackend:
         return self._compute_mean_time(kernel_name, block_size, grid_size, beamtype, IR)
 
     def get_step_mean_time(self, step_name, kernels_config, beamtype=None, IR=None):
-        self.update_param_file(kernels_config)
+        BenchmarkBackend.update_param_file(kernels_config, log_file=self.benchmark_backend_log)
         try:
             self.profile_benchmark(beamtype, IR)
         except (TimeoutError, RuntimeError) as e:

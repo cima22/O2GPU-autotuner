@@ -281,10 +281,16 @@ def main():
         'CFStreamCompaction_scanDown': {'grid_size': 300},
     }
 
-    sampler.backend.update_param_file(kernels_param_space)
-    return
+    kernels_param_space = {
+        "CompressionKernels_step1unattached": {
+            "grid_size": 840,
+            "block_size": 64
+        },
+    }
+
     for conf in configurations:
         beamtype, ir = conf
+        sampler.backend.param_dump = os.path.join("param_dumps", "default.par")
         mean, std_dev = sampler.backend.get_step_mean_time("multi_kernel", kernels_param_space, beamtype, ir)
         print(f"Step default mean time for {beamtype} at {ir}Hz: {mean:.2f} ms ± {std_dev:.2f} ms")
     return
