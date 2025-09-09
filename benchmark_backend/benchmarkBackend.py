@@ -4,6 +4,7 @@ import csv
 import numpy as np
 from collections import defaultdict
 import re
+import shutil
 
 class BenchmarkBackend:
     def __init__(self, output_folder):
@@ -11,7 +12,7 @@ class BenchmarkBackend:
         self.benchmark_backend_log = os.path.join(self.output_folder, 'benchmark_backend.log')
         if not os.path.exists(self.output_folder):
             os.makedirs(self.output_folder)
-        self.num_runs = 2
+        self.num_runs = 3
         self.dataset = None
         self.param_dump = "parameters.out"
 
@@ -47,7 +48,14 @@ class BenchmarkBackend:
             os.rename(hcc_ops_file, os.path.join(self.output_folder, 'times_raw.csv'))
 
     @staticmethod
-    def update_param_file(kernels_config, filename="include/testParam.h", log_file=None):
+    def update_param_file(kernels_config, filename="defaultParams.h", log_file=None):
+        base_dir = os.path.dirname(os.path.abspath(filename))
+        tmp_dir = os.path.join(base_dir, "tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        base = os.path.basename(filename)
+        tmp_file = os.path.join(tmp_dir, base)
+        shutil.copyfile(filename, tmp_file)
+        
         macro_updates = []
         kernel_updates = []
 
@@ -59,7 +67,7 @@ class BenchmarkBackend:
                 macro_updates.append((macro_name, value))
 
         for macro_name, macro_value in macro_updates:
-            sed_command = f"sed -E -i 's|^#define {macro_name} .*|#define {macro_name} {macro_value}|' {filename}"
+            sed_command = f"sed -E -i 's|^#define {macro_name} .*|#define {macro_name} {macro_value}|' {tmp_file}"
             os.system(sed_command)
 
         for kernel_name, config in kernel_updates:
@@ -67,7 +75,7 @@ class BenchmarkBackend:
                 block_size = config["block_size"]
                 sed_cmd_block = (
                     f"sed -E -i '/^\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+/"
-                    f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+)[0-9]+/\\1{block_size}/' {filename}"
+                    f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+)[0-9]+/\\1{block_size}/' {tmp_file}"
                 )
                 os.system(sed_cmd_block)
             if "grid_size" in config:
@@ -78,11 +86,11 @@ class BenchmarkBackend:
                     grid_replacement = f"{grid_size // 60}, {grid_size}"
                 sed_cmd_grid = (
                     f"sed -E -i '/^\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+/"
-                    f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+)(, *[0-9]+)*(, *[0-9]+)*/\\1, {grid_replacement}/' {filename}"
+                    f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+)(, *[0-9]+)*(, *[0-9]+)*/\\1, {grid_replacement}/' {tmp_file}"
                 )
                 os.system(sed_cmd_grid)
 
-        root_command = f"echo -e '#define PARAMETER_FILE \"'`pwd`'/{filename}\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"
+        root_command = f"echo -e '#define PARAMETER_FILE \"{tmp_file}\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"
         if log_file is not None:
             with open(log_file, 'a') as f:
                 subprocess.run(root_command, shell=True, stdout=f, stderr=subprocess.STDOUT)
