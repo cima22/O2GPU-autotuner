@@ -15,7 +15,18 @@ class BenchmarkBackend:
         self.num_runs = 3
         self.dataset = None
         self.param_dump = "parameters.out"
-
+        self.nCU = BenchmarkBackend._get_number_of_compute_units()
+        
+    @staticmethod
+    def _get_number_of_compute_units():
+        cmd = "rocminfo | grep -A15 'GPU' | grep 'Compute Unit' | head -n1 | awk '{print $3}'"
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+            nCU = int(result.stdout.strip())
+        except (subprocess.CalledProcessError, ValueError):
+            nCU = 1
+        return nCU
+    
     def profile_benchmark(self, beamtype=None, IR=None):
         if beamtype is not None and IR is not None:
             dataset = f"o2-{beamtype}-{IR}Hz-32"
@@ -48,7 +59,8 @@ class BenchmarkBackend:
             os.rename(hcc_ops_file, os.path.join(self.output_folder, 'times_raw.csv'))
 
     @staticmethod
-    def update_param_file(kernels_config, filename="defaultParams.h", log_file=None):
+    def update_param_file(kernels_config, filename="defaultParamsMI100.h", log_file=None):
+        nCU = BenchmarkBackend._get_number_of_compute_units()
         base_dir = os.path.dirname(os.path.abspath(filename))
         tmp_dir = os.path.join(base_dir, "tmp")
         os.makedirs(tmp_dir, exist_ok=True)
@@ -80,10 +92,10 @@ class BenchmarkBackend:
                 os.system(sed_cmd_block)
             if "grid_size" in config:
                 grid_size = config["grid_size"]
-                if grid_size % 60 == 0:
-                    grid_replacement = f"{grid_size // 60}"
+                if grid_size % nCU == 0:
+                    grid_replacement = f"{grid_size // nCU}"
                 else:
-                    grid_replacement = f"{grid_size // 60}, {grid_size}"
+                    grid_replacement = f"{grid_size // nCU}, {grid_size}"
                 sed_cmd_grid = (
                     f"sed -E -i '/^\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+/"
                     f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+)(, *[0-9]+)*(, *[0-9]+)*/\\1, {grid_replacement}/' {tmp_file}"

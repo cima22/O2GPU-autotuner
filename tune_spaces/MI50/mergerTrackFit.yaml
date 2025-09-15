@@ -1,0 +1,11 @@
+GMMergerTrackFit:
+  grid_size:
+    type: range
+    low: 60
+    high: 600
+    step: 60
+  block_size:
+    type: range
+    low: 64
+    high: 1024
+    step: 64

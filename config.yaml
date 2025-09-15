@@ -1,0 +1,32 @@
+stages_user:
+  # as above
+  pre_proc1:
+    python:                                  # run some python code
+      file: pre_proc.py
+      entrypoint: set_env                  # the function inside the pre_proc.py file to call
+    config:                                  # optional; can be used to add something or to override key-values in the global static configuration (locally, only for this stage)
+      another_key: another_value
+
+  # one additional stage that will be used to create some evaluation plots on top of an optimisation
+  evaluate:
+    file: evaluate.py
+    entrypoint: evaluate
+    # config or cwd or log_file
+    optimisations:                           # list of optimisations to be processed (opt1 definition below)
+      - opt1
+
+stages_optimisation:
+  opt1:
+    file: optimise.py
+    entrypoint: optimise
+#    deps:
+#      - pre_proc1
+    trials: 600                              # optional; number of optimisation trials, in this case 100; will be distributed to the parallel jobs
+    # optuna-specific settings
+    study:
+      name: indep_kernel_study          # optional; default is the name of the stage, in this case "opt1"
+    sampler:                                 # optional; advanced, usually not needed; default is tpe with its default args
+      name: tpe                              # tree-parzen estimator
+      args:                                  # see https://optuna.readthedocs.io/en/stable/reference/samplers/generated/optuna.samplers.TPESampler.html for possible arguments of TPE sampler
+        constant_liar: false
+        n_startup_trials: 100

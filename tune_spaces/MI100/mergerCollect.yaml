@@ -1,0 +1,11 @@
+GMMergerCollect:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+  block_size:
+    type: range
+    low: 64
+    high: 1024
+    step: 64

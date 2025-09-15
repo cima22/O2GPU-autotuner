@@ -1,0 +1,83 @@
+CFClusterizer:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+  block_size:
+    type: range
+    low: 64
+    high: 1024
+    step: 64
+CFDecodeZSDenseLink:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFNoiseSuppression_noiseSuppression:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFDeconvolution:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFPeakFinder:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFCheckPadBaseline:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFStreamCompaction_compactDigits:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFNoiseSuppression_updatePeaks:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFStreamCompaction_scanStart:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFGather:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFStreamCompaction_scanUp:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFStreamCompaction_scanTop:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
+CFStreamCompaction_scanDown:
+  grid_size:
+    type: range
+    low: 120
+    high: 1200
+    step: 120
