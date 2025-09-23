@@ -5,9 +5,11 @@ import numpy as np
 from collections import defaultdict
 import re
 import shutil
+import pandas as pd
+import glob
 
 class BenchmarkBackend:
-    def __init__(self, output_folder):
+    def __init__(self, output_folder, backend="auto"):
         self.output_folder = output_folder
         self.benchmark_backend_log = os.path.join(self.output_folder, 'benchmark_backend.log')
         if not os.path.exists(self.output_folder):
@@ -15,10 +17,56 @@ class BenchmarkBackend:
         self.num_runs = 3
         self.dataset = None
         self.param_dump = "parameters.out"
-        self.nCU = BenchmarkBackend._get_number_of_compute_units()
+        self.backend = backend if backend != "auto" else BenchmarkBackend._detect_GPUs_vendor()
+        if self.backend not in ["amd", "nvidia"]:
+            print("Warning: Unsupported or unknown GPU backend detected")
+            return
+        if self.backend == "amd":
+            self.profiler = "rocprofv2"
+            self.profiler_options = ["--hip-activity",  "-o times_raw"]
+            self.nSMs = BenchmarkBackend._AMD_get_number_of_compute_units()
+        if self.backend == "nvidia":
+            self.profiler = "nsys"
+            self.profiler_options = ["profile"]
+            self.nSMs = BenchmarkBackend._NVIDIA_get_number_of_streaming_multiprocessors()
+        try:
+            BenchmarkBackend._detect_profiler(self.profiler)
+        except FileNotFoundError as e:
+            print("Profiler not found! Please ensure it is installed and in your PATH.")
+            
+    @staticmethod
+    def _detect_GPUs_vendor():
+        VENDOR_MAP = {
+            "0x10de": "nvidia",
+            "0x1002": "amd",
+            "0x8086": "intel",
+        }
+        vendors = []
+        for vfile in glob.glob("/sys/class/drm/card*/device/vendor"):
+            if not os.access(vfile, os.R_OK):
+                continue
+            try:
+                with open(vfile) as f:
+                    vid = f.read().strip().lower()
+                if vid in VENDOR_MAP:
+                    vendors.append(VENDOR_MAP[vid])
+                else:
+                    vendors.append(f"unknown({vid})")
+            except Exception as e:
+                print(f"Skipping {vfile}: {e}")
+        
+        if "nvidia" in vendors:
+            print("Detected NVIDIA GPU(s)")
+            return "nvidia"
+        if "amd" in vendors:
+            print("Detected AMD GPU(s)")
+            return "amd"
+        print("Detected multiple GPU vendors:", vendors)
+        print("Using the first one:", vendors[0])
+        return vendors[0]
         
     @staticmethod
-    def _get_number_of_compute_units():
+    def _AMD_get_number_of_compute_units():
         cmd = "rocminfo | grep -A15 'GPU' | grep 'Compute Unit' | head -n1 | awk '{print $3}'"
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
@@ -27,14 +75,26 @@ class BenchmarkBackend:
             nCU = 1
         return nCU
     
+    @staticmethod
+    def _NVIDIA_get_number_of_streaming_multiprocessors():
+        return 1  #TODO: Placeholder, implement actual detection
+
+    @staticmethod
+    def _detect_profiler(profiler):
+        try:
+            subprocess.run([profiler, "--version"], capture_output=True, text=True, check=True)
+        except subprocess.CalledProcessError as e:
+            raise FileNotFoundError(f"{profiler} not found or not working properly.") from e
+        
     def profile_benchmark(self, beamtype=None, IR=None):
         if beamtype is not None and IR is not None:
             dataset = f"o2-{beamtype}-{IR}Hz-32"
         else:
             dataset = self.dataset
-        command = [
-            "rocprofv2", "--hip-activity", "-d", self.output_folder,
-            "-o", "times_raw", "./ca",
+        command = [self.profiler] + self.profiler_options
+        command += [
+            "-d", self.output_folder,
+            "./ca",
             "-e", dataset,
             "--sync", "-g", "--memSize", "15000000000",
             "--preloadEvents", "--runs", str(self.num_runs),
@@ -51,16 +111,18 @@ class BenchmarkBackend:
                 f.write(f"ERROR: Benchmark crashed. Return code: {e.returncode}\n")
                 raise RuntimeError(f"Benchmark crashed with return code {e.returncode}")
 
-        if os.path.isfile(os.path.join(self.output_folder, 'hip_api_trace_times_raw.csv')):
-            os.remove(os.path.join(self.output_folder, 'hip_api_trace_times_raw.csv'))
+    def _postprocess_profiler_output(self):
+        if self.backend == "amd":
+            if os.path.isfile(os.path.join(self.output_folder, 'hip_api_trace_times_raw.csv')):
+                os.remove(os.path.join(self.output_folder, 'hip_api_trace_times_raw.csv'))
+            hcc_ops_file = os.path.join(self.output_folder, 'hcc_ops_trace_times_raw.csv')
+            if os.path.isfile(hcc_ops_file):
+                os.rename(hcc_ops_file, os.path.join(self.output_folder, 'times_raw.csv'))
+        if self.backend == "nvidia":
+            command = "nsys export --type json --output times_raw.json --separate-strings 1 --include-json 1 -f 1 report.nsys-rep"
+            subprocess.run(command, shell=True, cwd=self.output_folder)
 
-        hcc_ops_file = os.path.join(self.output_folder, 'hcc_ops_trace_times_raw.csv')
-        if os.path.isfile(hcc_ops_file):
-            os.rename(hcc_ops_file, os.path.join(self.output_folder, 'times_raw.csv'))
-
-    @staticmethod
-    def update_param_file(kernels_config, filename="defaultParamsMI100.h", log_file=None):
-        nCU = BenchmarkBackend._get_number_of_compute_units()
+    def update_param_file(self, kernels_config, filename="defaultParamsMI100.h", log_file=None):
         base_dir = os.path.dirname(os.path.abspath(filename))
         tmp_dir = os.path.join(base_dir, "tmp")
         os.makedirs(tmp_dir, exist_ok=True)
@@ -92,10 +154,10 @@ class BenchmarkBackend:
                 os.system(sed_cmd_block)
             if "grid_size" in config:
                 grid_size = config["grid_size"]
-                if grid_size % nCU == 0:
-                    grid_replacement = f"{grid_size // nCU}"
+                if grid_size % self.nSMs == 0:
+                    grid_replacement = f"{grid_size // self.nSMs}"
                 else:
-                    grid_replacement = f"{grid_size // nCU}, {grid_size}"
+                    grid_replacement = f"{grid_size // self.nSMs}, {grid_size}"
                 sed_cmd_grid = (
                     f"sed -E -i '/^\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+/"
                     f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+)(, *[0-9]+)*(, *[0-9]+)*/\\1, {grid_replacement}/' {tmp_file}"
@@ -135,6 +197,61 @@ class BenchmarkBackend:
             if not file_exists:
                 writer.writerow(fieldnames)
             writer.writerows(rows)
+
+    def _get_views(self):
+        input_file = os.path.join(self.output_folder, 'times_raw.csv')
+        stats = pd.read_csv(input_file)
+        stats = stats[stats["Operation"] == "KernelExecution"]
+        stats = stats[["Kernel_Name", "Start_Timestamp", "Stop_Timestamp"]]
+        stats["Start_Timestamp"] = pd.to_numeric(stats["Start_Timestamp"], errors='coerce')
+        stats["Stop_Timestamp"] = pd.to_numeric(stats["Stop_Timestamp"], errors='coerce')
+        stats["DurationMs"] = (stats["Stop_Timestamp"] - stats["Start_Timestamp"]) / 1e6
+
+        sorted_by_start = stats.sort_values(by="Start_Timestamp").reset_index(drop=True)
+
+        last_kernel = "krnl_GPUTPCCompressionGatherKernels_multiBlock"
+
+        # Find all indices where the value matches
+        indices = sorted_by_start.index[sorted_by_start["Kernel_Name"] == last_kernel].tolist()
+
+        # Add first (0) and last (len-1) boundaries so we can slice between them
+        boundaries = [-1] + indices + [len(sorted_by_start)]
+
+        # Collect views, each including the searched kernel occurrence at the boundary
+        views = []
+        for i in range(len(boundaries) - 1):
+            start = boundaries[i] + 1
+            end = boundaries[i+1] + 1
+            # include the searched kernel occurrence at the boundary (end index)
+            view = sorted_by_start.iloc[start:end]
+            if not view.empty:
+                views.append(view)
+
+        self.views = views
+        return views
+
+    def _new_compute_step_mean_time(self, step_name, kernels_config, beamtype, IR, write_to_csv=True):
+        subviews = []
+        durations = []
+        for view in self.views:
+            subview = view[view["Kernel_Name"].str.contains('|'.join(kernels_config.keys()))]
+            if not subview.empty:
+                subviews.append(subview)
+        for subview in subviews:
+            earliest_start = subview["Start_Timestamp"].min()
+            latest_stop = subview["Stop_Timestamp"].max()
+            duration_ms = (latest_stop - earliest_start) / 1e6
+            durations.append(duration_ms)
+        data = np.array(durations)
+        mean = np.mean(data)
+        std_dev = np.std(data)
+
+        if write_to_csv:
+            output_file = os.path.join(self.output_folder, f'{step_name}_step_stats.csv')
+            row = [[kernels_config, beamtype, IR, mean, std_dev]]
+            self._write_stats_to_csv(output_file, ["kernels_config", "beamtype", "IR", "mean", "std_dev"], row)
+
+        return (mean, std_dev)
 
     def _get_run_time_intervals(self):
         input_file = os.path.join(self.output_folder, 'times_raw.csv')
@@ -247,7 +364,7 @@ class BenchmarkBackend:
     
     def get_kernel_mean_time(self, kernel_name, block_size, grid_size, beamtype, IR):
         kernels_config = {kernel_name: {"block_size": block_size, "grid_size": grid_size}}
-        BenchmarkBackend.update_param_file(kernels_config, log_file=self.benchmark_backend_log)
+        self.update_param_file(kernels_config, log_file=self.benchmark_backend_log)
         try:
             self.profile_benchmark(beamtype, IR)
         except (TimeoutError, RuntimeError) as e:
@@ -257,7 +374,7 @@ class BenchmarkBackend:
         return self._compute_mean_time(kernel_name, block_size, grid_size, beamtype, IR)
 
     def get_step_mean_time(self, step_name, kernels_config, beamtype=None, IR=None):
-        BenchmarkBackend.update_param_file(kernels_config, log_file=self.benchmark_backend_log)
+        self.update_param_file(kernels_config, log_file=self.benchmark_backend_log)
         try:
             self.profile_benchmark(beamtype, IR)
         except (TimeoutError, RuntimeError) as e:
