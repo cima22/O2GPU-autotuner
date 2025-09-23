@@ -7,6 +7,7 @@ import re
 import shutil
 import pandas as pd
 import glob
+import json
 
 class BenchmarkBackend:
     def __init__(self, output_folder, backend="auto"):
@@ -25,10 +26,12 @@ class BenchmarkBackend:
             self.profiler = "rocprofv2"
             self.profiler_options = ["--hip-activity",  "-o times_raw"]
             self.nSMs = BenchmarkBackend._AMD_get_number_of_compute_units()
+            self._get_df_from_raw = self._AMD_get_df_from_raw
         if self.backend == "nvidia":
             self.profiler = "nsys"
             self.profiler_options = ["profile"]
             self.nSMs = BenchmarkBackend._NVIDIA_get_number_of_streaming_multiprocessors()
+            self._get_df_from_raw = self._NVIDIA_get_df_from_raw
         try:
             BenchmarkBackend._detect_profiler(self.profiler)
         except FileNotFoundError as e:
@@ -110,6 +113,7 @@ class BenchmarkBackend:
             except subprocess.CalledProcessError as e:
                 f.write(f"ERROR: Benchmark crashed. Return code: {e.returncode}\n")
                 raise RuntimeError(f"Benchmark crashed with return code {e.returncode}")
+        self._postprocess_profiler_output()
 
     def _postprocess_profiler_output(self):
         if self.backend == "amd":
@@ -198,7 +202,7 @@ class BenchmarkBackend:
                 writer.writerow(fieldnames)
             writer.writerows(rows)
 
-    def _get_views(self):
+    def _AMD_get_df_from_raw(self):
         input_file = os.path.join(self.output_folder, 'times_raw.csv')
         stats = pd.read_csv(input_file)
         stats = stats[stats["Operation"] == "KernelExecution"]
@@ -206,158 +210,89 @@ class BenchmarkBackend:
         stats["Start_Timestamp"] = pd.to_numeric(stats["Start_Timestamp"], errors='coerce')
         stats["Stop_Timestamp"] = pd.to_numeric(stats["Stop_Timestamp"], errors='coerce')
         stats["DurationMs"] = (stats["Stop_Timestamp"] - stats["Start_Timestamp"]) / 1e6
+        stats.rename(columns={'Start_Timestamp': 'StartNs', 'Stop_Timestamp': 'EndNs'}, inplace=True)
+        return stats
+    
+    def _NVIDIA_get_df_from_raw(self):
+        input_file = os.path.join(self.output_folder, 'times_raw.json')
+        with open(input_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                    if isinstance(row, dict):
+                        if row.get("type") == "String":
+                            names.append(row)
+                        elif row.get("Type") == 79:
+                            cuda = row.get("CudaEvent", {})
+                            kernel = cuda.get("kernel", {})
+                            row["demangledName"] = kernel.get("demangledName")
+                            row["startNs"] = cuda.get("startNs")
+                            row["endNs"] = cuda.get("endNs")
+                            events.append(row)
+                except json.JSONDecodeError:
+                    print("Skipping malformed line:", line[:80])
 
-        sorted_by_start = stats.sort_values(by="Start_Timestamp").reset_index(drop=True)
+        names = pd.DataFrame(names)
+        events = pd.DataFrame(events)
+        merged = pd.merge(names, events, left_on="id", right_on="demangledName", how="inner")
+        merged = merged[["value", "startNs", "endNs"]]
+        merged["startNs"] = pd.to_numeric(merged["startNs"], errors='coerce')
+        merged["endNs"] = pd.to_numeric(merged["endNs"], errors='coerce')
+        merged["DurationMs"] = (merged["endNs"] - merged["startNs"]) / 1e6
+        merged.rename(columns={'value': 'Kernel_Name', 'startNs': 'StartNs', 'endNs': 'EndNs'}, inplace=True)
+        return merged
 
+    def _get_views(self):
+        kernel_stats = self._get_df_from_raw()
+        sorted_by_start = kernel_stats.sort_values(by="StartNs").reset_index(drop=True)
         last_kernel = "krnl_GPUTPCCompressionGatherKernels_multiBlock"
-
-        # Find all indices where the value matches
         indices = sorted_by_start.index[sorted_by_start["Kernel_Name"] == last_kernel].tolist()
-
-        # Add first (0) and last (len-1) boundaries so we can slice between them
         boundaries = [-1] + indices + [len(sorted_by_start)]
-
-        # Collect views, each including the searched kernel occurrence at the boundary
         views = []
         for i in range(len(boundaries) - 1):
             start = boundaries[i] + 1
             end = boundaries[i+1] + 1
-            # include the searched kernel occurrence at the boundary (end index)
             view = sorted_by_start.iloc[start:end]
             if not view.empty:
                 views.append(view)
-
         self.views = views
         return views
 
-    def _new_compute_step_mean_time(self, step_name, kernels_config, beamtype, IR, write_to_csv=True):
+    def _compute_kernel_mean_time(self, kernel_name, block_size, grid_size, beamtype, IR, write_to_csv=True):
+        kernel_stats = self._get_df_from_raw()
+        filtered = kernel_stats[kernel_stats["Kernel_Name"].str.contains(kernel_name)]
+        if filtered.empty:
+            return float('inf'), 0.0
+        data = filtered["DurationMs"].to_numpy()
+        mean = np.mean(data)
+        std_dev = np.std(data)
+        if write_to_csv:
+            output_file = os.path.join(self.output_folder, f'{kernel_name}_stats.csv')
+            row = [[block_size, grid_size, beamtype, IR, mean, std_dev]]
+            self._write_stats_to_csv(output_file, ["block_size", "grid_size", "beamtype", "IR", "mean", "std_dev"], row)
+        return (mean, std_dev)
+
+    def _compute_step_mean_time(self, step_name, kernels_config, beamtype, IR, write_to_csv=True):
         subviews = []
         durations = []
+        self._get_views(step_name, kernels_config)
         for view in self.views:
             subview = view[view["Kernel_Name"].str.contains('|'.join(kernels_config.keys()))]
             if not subview.empty:
                 subviews.append(subview)
         for subview in subviews:
-            earliest_start = subview["Start_Timestamp"].min()
-            latest_stop = subview["Stop_Timestamp"].max()
+            earliest_start = subview["StartNs"].min()
+            latest_stop = subview["EndNs"].max()
             duration_ms = (latest_stop - earliest_start) / 1e6
             durations.append(duration_ms)
         data = np.array(durations)
         mean = np.mean(data)
         std_dev = np.std(data)
-
         if write_to_csv:
             output_file = os.path.join(self.output_folder, f'{step_name}_step_stats.csv')
-            row = [[kernels_config, beamtype, IR, mean, std_dev]]
-            self._write_stats_to_csv(output_file, ["kernels_config", "beamtype", "IR", "mean", "std_dev"], row)
-
-        return (mean, std_dev)
-
-    def _get_run_time_intervals(self):
-        input_file = os.path.join(self.output_folder, 'times_raw.csv')
-        run_intervals = []
-        with open(input_file, 'r') as infile:
-            reader = csv.DictReader(infile)
-            recording = False
-            start_time = None
-            for row in reader:
-                if row["Operation"] != "KernelExecution":
-                    continue
-                kernel_name = row["Kernel_Name"]
-                if not recording: # skip dummy kernel
-                    recording = True
-                    continue
-                if start_time is None and (not run_intervals or int(row["Start_Timestamp"]) > run_intervals[-1][1]):
-                    start_time = int(row["Start_Timestamp"])
-                if kernel_name.startswith("krnl_GPUTPCCompressionGatherKernels"):
-                    stop_time = int(row["Stop_Timestamp"])
-                    run_intervals.append((start_time, stop_time))
-                    start_time = None
-        return run_intervals
-
-    def _compute_step_duration(self, step_name, kernels_config):
-        input_file = os.path.join(self.output_folder, 'times_raw.csv')
-        output_file = os.path.join(self.output_folder, f'{step_name}_step.csv')
-        step_kernels = set(kernels_config.keys())
-        run_intervals = self._get_run_time_intervals()
-        step_start_times_per_run = defaultdict(list)
-        step_stop_times_per_run = defaultdict(list)
-        with open(input_file, 'r') as infile:
-            reader = csv.DictReader(infile)
-            for row in reader:
-                kernel_name = row["Kernel_Name"].replace("krnl_GPUTPC", "")
-                if kernel_name not in step_kernels:
-                    continue
-                start_time = int(row["Start_Timestamp"])
-                stop_time = int(row["Stop_Timestamp"])
-                for run_index, (run_start, run_end) in enumerate(run_intervals):
-                    if run_start <= start_time <= stop_time <= run_end:
-                        step_start_times_per_run[run_index].append(start_time)
-                        step_stop_times_per_run[run_index].append(stop_time)
-                        break
-        results = []
-        for run_index in step_start_times_per_run:
-            if step_start_times_per_run[run_index]:
-                step_start = min(step_start_times_per_run[run_index])
-                step_stop = max(step_stop_times_per_run[run_index])
-                duration_ms = (step_stop - step_start) / 1e6
-                results.append({"Step_Name": step_name, "Duration (ms)": duration_ms})
-        with open(output_file, 'w', newline='') as outfile:
-            fieldnames = ["Step_Name", "Duration (ms)"]
-            writer = csv.DictWriter(outfile, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(results)
-
-    def _compute_kernel_mean(self, kernel_name, block_size, grid_size, beamtype, IR, write_to_csv=True):
-        input_file = os.path.join(self.output_folder, f'{kernel_name}.csv')
-        output_file = os.path.join(self.output_folder, f'{kernel_name}_stats.csv')
-        with open(input_file, 'r') as infile:
-            reader = csv.reader(infile)
-            next(reader)
-            data = [float(row[1]) for row in reader]
-        mean = np.mean(data)
-        std_dev = np.std(data)
-        if write_to_csv:
-            row = [[block_size, grid_size, beamtype, IR, mean, std_dev]]
-            self._write_stats_to_csv(output_file, ["block_size", "grid_size", "beamtype", "IR", "mean", "std_dev"], row)
-        return (mean, std_dev)
-
-    def _compute_MergerTrackFit_mean(self, block_size, grid_size, beamtype, IR, write_to_csv=True):
-        input_file = os.path.join(self.output_folder, 'GMMergerTrackFit.csv')
-        output_file = os.path.join(self.output_folder, 'GMMergerTrackFit_stats.csv')
-        with open(input_file, 'r') as infile:
-            reader = csv.reader(infile)
-            next(reader)
-            data = [float(row[1]) for row in reader]
-        results = []
-        stats = []
-        for i, idx in enumerate(["1", "2"]):
-            subset = data[i::2]
-            mean = np.mean(subset)
-            std_dev = np.std(subset)
-            row = [block_size, grid_size, beamtype, IR, idx, mean, std_dev]
-            stats.append((mean, std_dev))
-            results.append(row)
-        if write_to_csv:
-            self._write_stats_to_csv(output_file, ["block_size", "grid_size", "beamtype", "IR", "idx", "mean", "std_dev"], results)
-        return stats[0]
-
-    def _compute_mean_time(self, kernel_name, block_size, grid_size, beamtype, IR):
-        if "GMMergerTrackFit" == kernel_name:
-            return self._compute_MergerTrackFit_mean(block_size, grid_size, beamtype, IR)
-        else:
-            return self._compute_kernel_mean(kernel_name, block_size, grid_size, beamtype, IR)
-
-    def _compute_step_mean_time(self, step_name, kernels_config, beamtype, IR, write_to_csv=True):
-        input_file = os.path.join(self.output_folder, f'{step_name}_step.csv')
-        output_file = os.path.join(self.output_folder, f'{step_name}_step_stats.csv')
-        with open(input_file, 'r') as infile:
-            reader = csv.reader(infile)
-            next(reader)
-            data = [float(row[1]) for row in reader]
-        mean = np.mean(data)
-        std_dev = np.std(data)
-        if write_to_csv:
             row = [[kernels_config, beamtype, IR, mean, std_dev]]
             self._write_stats_to_csv(output_file, ["kernels_config", "beamtype", "IR", "mean", "std_dev"], row)
         return (mean, std_dev)
@@ -370,8 +305,7 @@ class BenchmarkBackend:
         except (TimeoutError, RuntimeError) as e:
             print(f"Error during benchmark: {e}")
             return (float('inf'), 0.0)
-        self._compute_durations(kernel_name)
-        return self._compute_mean_time(kernel_name, block_size, grid_size, beamtype, IR)
+        return self._compute_kernel_mean_time(kernel_name, block_size, grid_size, beamtype, IR)
 
     def get_step_mean_time(self, step_name, kernels_config, beamtype=None, IR=None):
         self.update_param_file(kernels_config, log_file=self.benchmark_backend_log)
@@ -380,9 +314,6 @@ class BenchmarkBackend:
         except (TimeoutError, RuntimeError) as e:
             print(f"Error during step benchmark: {e}")
             return (float('inf'), 0.0)
-        for kernel_name in kernels_config.keys():
-            self._compute_durations(kernel_name)
-        self._compute_step_duration(step_name, kernels_config)
         return self._compute_step_mean_time(step_name, kernels_config, beamtype, IR)
     
     def get_sync_mean_time(self, dump=None, beamtype=None, IR=None, dataset=None):
