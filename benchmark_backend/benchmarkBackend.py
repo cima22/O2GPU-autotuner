@@ -175,25 +175,7 @@ class BenchmarkBackend:
         else:
             subprocess.run(root_command, shell=True)
 
-    def _compute_durations(self, search_string):
-        input_file = os.path.join(self.output_folder, 'times_raw.csv')
-        output_file = os.path.join(self.output_folder, f'{search_string}.csv')
-        with open(input_file, 'r') as infile:
-            reader = csv.DictReader(infile)
-            results = []
-            for row in reader:
-                kernel_name = row["Kernel_Name"]
-                if search_string in kernel_name:
-                    start_time = int(row["Start_Timestamp"])
-                    stop_time = int(row["Stop_Timestamp"])
-                    duration = (stop_time - start_time) / 1000000.0
-                    results.append({"Kernel_Name": kernel_name, "Duration (ms)": duration})        
-        with open(output_file, 'w', newline='') as outfile:
-            fieldnames = ["Kernel_Name", "Duration (ms)"]
-            writer = csv.DictWriter(outfile, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(results)
-
+    @staticmethod
     def _write_stats_to_csv(self, output_file, fieldnames, rows):
         file_exists = os.path.exists(output_file)
         with open(output_file, 'a', newline='') as outfile:
@@ -272,7 +254,7 @@ class BenchmarkBackend:
         if write_to_csv:
             output_file = os.path.join(self.output_folder, f'{kernel_name}_stats.csv')
             row = [[block_size, grid_size, beamtype, IR, mean, std_dev]]
-            self._write_stats_to_csv(output_file, ["block_size", "grid_size", "beamtype", "IR", "mean", "std_dev"], row)
+            BenchmarkBackend._write_stats_to_csv(output_file, ["block_size", "grid_size", "beamtype", "IR", "mean", "std_dev"], row)
         return (mean, std_dev)
 
     def _compute_step_mean_time(self, step_name, kernels_config, beamtype, IR, write_to_csv=True):
@@ -294,7 +276,7 @@ class BenchmarkBackend:
         if write_to_csv:
             output_file = os.path.join(self.output_folder, f'{step_name}_step_stats.csv')
             row = [[kernels_config, beamtype, IR, mean, std_dev]]
-            self._write_stats_to_csv(output_file, ["kernels_config", "beamtype", "IR", "mean", "std_dev"], row)
+            BenchmarkBackend._write_stats_to_csv(output_file, ["kernels_config", "beamtype", "IR", "mean", "std_dev"], row)
         return (mean, std_dev)
     
     def get_kernel_mean_time(self, kernel_name, block_size, grid_size, beamtype, IR):
