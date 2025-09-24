@@ -58,12 +58,10 @@ class BenchmarkBackend:
             except Exception as e:
                 print(f"Skipping {vfile}: {e}")
         
-        if "nvidia" in vendors:
-            print("Detected NVIDIA GPU(s)")
-            return "nvidia"
-        if "amd" in vendors:
-            print("Detected AMD GPU(s)")
-            return "amd"
+        for vendor in ["nvidia", "amd"]:
+            if vendor in vendors:
+                print(f"Detected {vendor.upper()} GPU(s)")
+                return vendor
         print("Detected multiple GPU vendors:", vendors)
         print("Using the first one:", vendors[0])
         return vendors[0]
