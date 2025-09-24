@@ -7,6 +7,7 @@ import re
 import shutil
 import pandas as pd
 import glob
+import shutil
 import json
 
 class BenchmarkBackend:
@@ -39,32 +40,50 @@ class BenchmarkBackend:
             
     @staticmethod
     def _detect_GPUs_vendor():
-        VENDOR_MAP = {
-            "0x10de": "nvidia",
-            "0x1002": "amd",
-            "0x8086": "intel",
-        }
-        vendors = []
-        for vfile in glob.glob("/sys/class/drm/card*/device/vendor"):
-            if not os.access(vfile, os.R_OK):
-                continue
+        if shutil.which("nvidia-smi"):
             try:
-                with open(vfile) as f:
-                    vid = f.read().strip().lower()
-                if vid in VENDOR_MAP:
-                    vendors.append(VENDOR_MAP[vid])
-                else:
-                    vendors.append(f"unknown({vid})")
-            except Exception as e:
-                print(f"Skipping {vfile}: {e}")
-        
-        for vendor in ["nvidia", "amd"]:
-            if vendor in vendors:
-                print(f"Detected {vendor.upper()} GPU(s)")
-                return vendor
-        print("Detected multiple GPU vendors:", vendors)
-        print("Using the first one:", vendors[0])
-        return vendors[0]
+                subprocess.run(["nvidia-smi"], capture_output=True, text=True, check=True)
+                print("Detected NVIDIA GPU(s)")
+                return "nvidia"
+            except subprocess.CalledProcessError:
+                print("nvidia-smi found but not working properly.")
+        if shutil.which("rocm-smi"):
+            try:
+                subprocess.run(["rocm-smi"], capture_output=True, text=True, check=True)
+                print("Detected AMD GPU(s)")
+                return "amd"
+            except subprocess.CalledProcessError:
+                print("rocm-smi found but not working properly.")
+        return None
+
+    #@staticmethod
+    #def _detect_GPUs_vendor():
+    #        "0x10de": "nvidia",
+    #    VENDOR_MAP = {
+    #        "0x1002": "amd",
+    #        "0x8086": "intel",
+    #    }
+    #    vendors = []
+    #    for vfile in glob.glob("/sys/class/drm/card*/device/vendor"):
+    #        if not os.access(vfile, os.R_OK):
+    #            continue
+    #        try:
+    #            with open(vfile) as f:
+    #                vid = f.read().strip().lower()
+    #            if vid in VENDOR_MAP:
+    #                vendors.append(VENDOR_MAP[vid])
+    #            else:
+    #                vendors.append(f"unknown({vid})")
+    #        except Exception as e:
+    #            print(f"Skipping {vfile}: {e}")
+    #    
+    #    for vendor in ["nvidia", "amd"]:
+    #        if vendor in vendors:
+    #            print(f"Detected {vendor.upper()} GPU(s)")
+    #            return vendor
+    #    print("Detected multiple GPU vendors:", vendors)
+    #    print("Using the first one:", vendors[0])
+    #    return vendors[0]
         
     @staticmethod
     def _AMD_get_number_of_compute_units():
