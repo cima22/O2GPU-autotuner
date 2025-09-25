@@ -97,7 +97,13 @@ class BenchmarkBackend:
     
     @staticmethod
     def _NVIDIA_get_number_of_streaming_multiprocessors():
-        return 1  #TODO: Placeholder, implement actual detection
+        cmd = "./count_SM_Nvidia"
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+            nSM = int(result.stdout.strip())
+        except (subprocess.CalledProcessError, ValueError):
+            nSM = 1
+        return nSM
 
     @staticmethod
     def _detect_profiler(profiler):
