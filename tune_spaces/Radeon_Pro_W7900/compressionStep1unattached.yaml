@@ -1,0 +1,11 @@
+CompressionKernels_step1unattached:
+  grid_size:
+    type: range
+    low: 96
+    high: 960
+    step: 96
+  block_size:
+    type: range
+    low: 32
+    high: 512
+    step: 32

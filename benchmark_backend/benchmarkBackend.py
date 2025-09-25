@@ -97,7 +97,7 @@ class BenchmarkBackend:
     
     @staticmethod
     def _NVIDIA_get_number_of_streaming_multiprocessors():
-        binary_abs_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "count_SM_Nvidia")
+        binary_abs_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../count_SM_Nvidia")
         try:
             result = subprocess.run(binary_abs_path, shell=True, capture_output=True, text=True, check=True)
             nSM = int(result.stdout.strip())

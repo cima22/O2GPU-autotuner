@@ -1,0 +1,21 @@
+CompressionKernels_step0attached:
+  grid_size:
+    type: range
+    low: 96
+    high: 960
+    step: 96
+  block_size:
+    type: values
+    values: [32, 64, 96, 128, 160, 192]
+
+GMMergerFollowLoopers:
+  grid_size:
+    type: range
+    low: 96
+    high: 960
+    step: 96
+  block_size:
+    type: range
+    low: 32
+    high: 256
+    step: 32

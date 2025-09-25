@@ -21,11 +21,12 @@ trials_map["mergerSectorRefit"]="100 25"
 trials_map["mergerTrackFit"]="100 25"
 trials_map["mergerCollect"]="100 25"
 trials_map["multikernel"]="200 50"
-trials_map["tracklet"]="400 100"
+#trials_map["tracklet"]="400 100"
 trials_map["clusterizer"]="400 100"
 trials_map["compressionStep1unattached"]="100 25"
 
 COMMON_CONFIG="config.yaml"
+TMP_CONFIG="$OUTPUT_DIR"/tmp_config.yaml
 : "${TUNE_SPACE_DIR:=tune_spaces/MI50}"
 
 for yaml_file in "${!trials_map[@]}"; do
@@ -34,16 +35,16 @@ for yaml_file in "${!trials_map[@]}"; do
   echo "🔧 Updating config for $yaml_file with trials=$trials and startup=$startup"
 
   # Modify the common config with sed (backup first)
-  cp "$COMMON_CONFIG" tmp_config.yaml
+  cp "$COMMON_CONFIG" "$TMP_CONFIG"
 
   # Replace trials and startup values
-  sed -i "s/trials: .*/trials: $trials/" tmp_config.yaml
-  sed -i "s/n_startup_trials: .*/n_startup_trials: $startup/" tmp_config.yaml
+  sed -i "s/trials: .*/trials: $trials/" $TMP_CONFIG
+  sed -i "s/n_startup_trials: .*/n_startup_trials: $startup/" $TMP_CONFIG
 
   export TUNE_SPACE_PATH="${TUNE_SPACE_DIR}/${yaml_file}.yaml"
   echo "🚀 Running for $TUNE_SPACE_PATH"
 
   # Run your actual command using the updated config
   #
-  o2tuner -c tmp_config.yaml -w "$OUTPUT_DIR/${yaml_file}_tuning" -s opt1
+  o2tuner -c $TMP_CONFIG -w "$OUTPUT_DIR/${yaml_file}_tuning" -s opt1
 done
