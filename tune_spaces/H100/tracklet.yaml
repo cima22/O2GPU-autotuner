@@ -1,0 +1,117 @@
+TrackletConstructor:
+  grid_size:
+    type: range
+    low: 132
+    high: 1320
+    step: 132
+  block_size:
+    type: range
+    low: 32
+    high: 1024
+    step: 32
+
+TrackletSelector:
+  grid_size:
+    type: range
+    low: 132
+    high: 1320
+    step: 132
+  block_size:
+    type: range
+    low: 32
+    high: 1024
+    step: 32
+
+NeighboursCleaner:
+  grid_size:
+    type: range
+    low: 132
+    high: 1320
+    step: 132
+  block_size:
+    type: range
+    low: 32
+    high: 1024
+    step: 32
+
+NeighboursFinder:
+  grid_size:
+    type: range
+    low: 132
+    high: 1320
+    step: 132
+  block_size:
+    type: range
+    low: 32
+    high: 1024
+    step: 32
+
+StartHitsSorter:
+  grid_size:
+    type: range
+    low: 132
+    high: 1320
+    step: 132
+  block_size:
+    type: range
+    low: 32
+    high: 1024
+    step: 32
+
+CreateTrackingData:
+  grid_size:
+    type: range
+    low: 132
+    high: 1320
+    step: 132
+  block_size:
+    type: range
+    low: 32
+    high: 1024
+    step: 32
+
+StartHitsFinder:
+  grid_size:
+    type: range
+    low: 132
+    high: 1320
+    step: 132
+  block_size:
+    type: range
+    low: 32
+    high: 1024
+    step: 32
+
+ExtrapolationTracking:
+  grid_size:
+    type: range
+    low: 132
+    high: 1320
+    step: 132
+  block_size:
+    type: range
+    low: 32
+    high: 1024
+    step: 32
+
+PAR_NEIGHBOURS_FINDER_MAX_NNEIGHUP:
+  type: range
+  low: 0
+  high: 15
+
+PAR_NEIGHBOURS_FINDER_UNROLL_GLOBAL:
+  type: values
+  values: [1, 2, 4, 8]
+
+PAR_NEIGHBOURS_FINDER_UNROLL_SHARED:
+  type: values
+  values: [0, 1]
+
+PAR_TRACKLET_SELECTOR_HITS_REG_SIZE:
+  type: range
+  low: 0
+  high: 40
+
+PAR_SORT_STARTHITS:
+  type: values
+  values: [0, 1]

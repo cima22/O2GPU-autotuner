@@ -1,0 +1,11 @@
+GMMergerSectorRefit:
+  grid_size:
+    type: range
+    low: 132
+    high: 1320
+    step: 132
+  block_size:
+    type: range
+    low: 32
+    high: 1024
+    step: 32
