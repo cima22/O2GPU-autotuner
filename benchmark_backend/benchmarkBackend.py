@@ -149,7 +149,7 @@ class BenchmarkBackend:
             command = "nsys export --type json --output times_raw.json --separate-strings 1 --include-json 1 -f 1 report.nsys-rep"
             subprocess.run(command, shell=True, cwd=self.output_folder)
 
-    def update_param_file(self, kernels_config, filename="defaultParamsMI100.h", log_file=None):
+    def update_param_file(self, kernels_config, filename, log_file=None):
         base_dir = os.path.dirname(os.path.abspath(filename))
         tmp_dir = os.path.join(base_dir, "tmp")
         os.makedirs(tmp_dir, exist_ok=True)
@@ -302,9 +302,9 @@ class BenchmarkBackend:
             BenchmarkBackend._write_stats_to_csv(output_file, ["kernels_config", "beamtype", "IR", "mean", "std_dev"], row)
         return (mean, std_dev)
     
-    def get_kernel_mean_time(self, kernel_name, block_size, grid_size, beamtype, IR):
+    def get_kernel_mean_time(self, kernel_name, block_size, grid_size, beamtype, IR, filename="defaultParams.h"):
         kernels_config = {kernel_name: {"block_size": block_size, "grid_size": grid_size}}
-        self.update_param_file(kernels_config, log_file=self.benchmark_backend_log)
+        self.update_param_file(kernels_config, filename, log_file=self.benchmark_backend_log)
         try:
             self.profile_benchmark(beamtype, IR)
         except (TimeoutError, RuntimeError) as e:
@@ -312,8 +312,8 @@ class BenchmarkBackend:
             return (float('inf'), 0.0)
         return self._compute_kernel_mean_time(kernel_name, block_size, grid_size, beamtype, IR)
 
-    def get_step_mean_time(self, step_name, kernels_config, beamtype=None, IR=None):
-        self.update_param_file(kernels_config, log_file=self.benchmark_backend_log)
+    def get_step_mean_time(self, step_name, kernels_config, beamtype=None, IR=None, filename="defaultParams.h"):
+        self.update_param_file(kernels_config, filename, log_file=self.benchmark_backend_log)
         try:
             self.profile_benchmark(beamtype, IR)
         except (TimeoutError, RuntimeError) as e:
