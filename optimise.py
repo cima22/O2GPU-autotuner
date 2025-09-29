@@ -5,6 +5,7 @@ import yaml
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 TUNE_SPACE_PATH = os.getenv("TUNE_SPACE_PATH", os.path.join(os.path.dirname(__file__), "tune_space.yaml"))
+TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../standalone"))
 
 with open(TUNE_SPACE_PATH, "r") as f:
     tune_config = yaml.safe_load(f)
@@ -15,7 +16,7 @@ from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
 def optimise(trial):
     original_cwd = os.getcwd()
     try:
-        os.chdir(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../..")))
+        os.chdir(TUNER_WORKDIR)
         backend = BenchmarkBackend(os.path.join(original_cwd, "o2tuner"))
         kernels_param_space = {}
 
@@ -56,7 +57,7 @@ def optimise(trial):
                 #if min_block_per_cu * max_threads / 256 > 10:
                 #    return float("inf")  # Penalize this configuration
 
-        result = backend.get_step_mean_time("optimisation_step", kernels_param_space, "pbpb", "50k", "/shared/standalone/defaultParamsH100.h")[0]
+        mean, std_dev = backend.get_step_mean_time("optimisation_step", kernels_param_space, "pbpb", "50k", os.path.join(TUNER_WORKDIR, "defaultParamsH100.h"))
     finally:
         os.chdir(original_cwd)
-    return result
+    return mean

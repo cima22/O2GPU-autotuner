@@ -7,6 +7,7 @@ fi
 
 OUTPUT_DIR="$(realpath "$1")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export TUNER_WORKDIR=$(realpath "$TUNER_WORKDIR")
 
 if [ -d "$OUTPUT_DIR" ]; then
   read -p "⚠️ Directory '$OUTPUT_DIR' already exists. Do you want to continue? [y/N] " response
@@ -23,7 +24,7 @@ trials_map["mergerSectorRefit"]="100 25"
 trials_map["mergerTrackFit"]="100 25"
 trials_map["mergerCollect"]="100 25"
 trials_map["multikernel"]="200 50"
-#trials_map["tracklet"]="400 100"
+trials_map["tracklet"]="400 100"
 trials_map["clusterizer"]="400 100"
 trials_map["compressionStep1unattached"]="100 25"
 

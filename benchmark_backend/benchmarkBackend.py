@@ -20,18 +20,18 @@ class BenchmarkBackend:
         self.dataset = None
         self.param_dump = "parameters.out"
         self.debug = debug
-        self.backend = backend if backend != "auto" else BenchmarkBackend._detect_GPUs_vendor()
+        self.backend = backend if backend != "auto" else BenchmarkBackend._detect_GPUs_vendor(self.debug)
         if self.backend not in ["amd", "nvidia"]:
             print("Warning: Unsupported or unknown GPU backend detected")
             return
         if self.backend == "amd":
             self.profiler = "rocprofv2"
-            self.profiler_options = ["--hip-activity",  "-o times_raw"]
+            self.profiler_options = ["--hip-activity",  "-o", "times_raw", "-d", f"{self.output_folder}"]
             self.nSMs = BenchmarkBackend._AMD_get_number_of_compute_units()
             self._get_df_from_raw = self._AMD_get_df_from_raw
         if self.backend == "nvidia":
             self.profiler = "nsys"
-            self.profiler_options = ["profile"]
+            self.profiler_options = ["profile", "-o", f"{os.path.join(self.output_folder, 'report.nsys-rep')}", "--force-overwrite", "true"]
             self.nSMs = BenchmarkBackend._NVIDIA_get_number_of_streaming_multiprocessors()
             self._get_df_from_raw = self._NVIDIA_get_df_from_raw
         try:
@@ -40,11 +40,11 @@ class BenchmarkBackend:
             print("Profiler not found! Please ensure it is installed and in your PATH.")
             
     @staticmethod
-    def _detect_GPUs_vendor():
+    def _detect_GPUs_vendor(debug=False):
         if shutil.which("nvidia-smi"):
             try:
                 subprocess.run(["nvidia-smi"], capture_output=True, text=True, check=True)
-                if self.debug:
+                if debug:
                     print("Detected NVIDIA GPU(s)")
                 return "nvidia"
             except subprocess.CalledProcessError:
@@ -52,7 +52,7 @@ class BenchmarkBackend:
         if shutil.which("rocm-smi"):
             try:
                 subprocess.run(["rocm-smi"], capture_output=True, text=True, check=True)
-                if self.debug:
+                if debug:
                     print("Detected AMD GPU(s)")
                 return "amd"
             except subprocess.CalledProcessError:
@@ -120,18 +120,14 @@ class BenchmarkBackend:
             dataset = f"o2-{beamtype}-{IR}Hz-32"
         else:
             dataset = self.dataset
+        rtc_dump = ["./ca", "--noEvents", "-g", "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
-        command += [
-            "-d", self.output_folder,
-            "./ca",
-            "-e", dataset,
-            "--sync", "-g", "--memSize", "15000000000",
-            "--preloadEvents", "--runs", str(self.num_runs),
-            "--RTCenable", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump
-        ]
-        timeout = 30 + 45 * self.num_runs # stall timeout check
+        command += ["./ca", "-e", dataset, "--sync", "-g", "--memSize", "15000000000", "--preloadEvents", "--runs", str(self.num_runs), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+        timeout = 90
         with open(self.benchmark_backend_log, 'a') as f:
             try:
+                subprocess.run(rtc_dump, stdout=f, stderr=f, timeout=timeout, check=True)
+                timeout = 60 * self.num_runs # stall timeout check
                 subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, check=True)
             except subprocess.TimeoutExpired:
                 f.write("ERROR: Benchmark stalled and timed out.\n")
@@ -149,8 +145,11 @@ class BenchmarkBackend:
             if os.path.isfile(hcc_ops_file):
                 os.rename(hcc_ops_file, os.path.join(self.output_folder, 'times_raw.csv'))
         if self.backend == "nvidia":
-            command = "nsys export --type json --output times_raw.json --separate-strings 1 --include-json 1 -f 1 report.nsys-rep"
-            subprocess.run(command, shell=True, cwd=self.output_folder)
+            report_file = os.path.join(self.output_folder, "report.nsys-rep")
+            json_file = os.path.join(self.output_folder, "times_raw.json")
+            if os.path.isfile(report_file):
+                command = f"nsys export --type json --output {json_file} --separate-strings 1 --include-json 1 -f 1 {report_file}"
+                subprocess.run(command, shell=True, cwd=self.output_folder)
 
     def update_param_file(self, kernels_config, filename, log_file=None):
         base_dir = os.path.dirname(os.path.abspath(filename))
@@ -202,7 +201,7 @@ class BenchmarkBackend:
             subprocess.run(root_command, shell=True)
 
     @staticmethod
-    def _write_stats_to_csv(self, output_file, fieldnames, rows):
+    def _write_stats_to_csv(output_file, fieldnames, rows):
         file_exists = os.path.exists(output_file)
         with open(output_file, 'a', newline='') as outfile:
             writer = csv.writer(outfile)
@@ -223,6 +222,8 @@ class BenchmarkBackend:
     
     def _NVIDIA_get_df_from_raw(self):
         input_file = os.path.join(self.output_folder, 'times_raw.json')
+        names = []
+        events = []
         with open(input_file) as f:
             for line in f:
                 line = line.strip()
@@ -286,7 +287,7 @@ class BenchmarkBackend:
     def _compute_step_mean_time(self, step_name, kernels_config, beamtype, IR, write_to_csv=True):
         subviews = []
         durations = []
-        self._get_views(step_name, kernels_config)
+        self._get_views()
         for view in self.views:
             subview = view[view["Kernel_Name"].str.contains('|'.join(kernels_config.keys()))]
             if not subview.empty:
