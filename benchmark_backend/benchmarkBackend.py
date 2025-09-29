@@ -11,7 +11,7 @@ import shutil
 import json
 
 class BenchmarkBackend:
-    def __init__(self, output_folder, backend="auto"):
+    def __init__(self, output_folder, backend="auto", debug=False):
         self.output_folder = output_folder
         self.benchmark_backend_log = os.path.join(self.output_folder, 'benchmark_backend.log')
         if not os.path.exists(self.output_folder):
@@ -19,6 +19,7 @@ class BenchmarkBackend:
         self.num_runs = 3
         self.dataset = None
         self.param_dump = "parameters.out"
+        self.debug = debug
         self.backend = backend if backend != "auto" else BenchmarkBackend._detect_GPUs_vendor()
         if self.backend not in ["amd", "nvidia"]:
             print("Warning: Unsupported or unknown GPU backend detected")
@@ -43,14 +44,16 @@ class BenchmarkBackend:
         if shutil.which("nvidia-smi"):
             try:
                 subprocess.run(["nvidia-smi"], capture_output=True, text=True, check=True)
-                print("Detected NVIDIA GPU(s)")
+                if self.debug:
+                    print("Detected NVIDIA GPU(s)")
                 return "nvidia"
             except subprocess.CalledProcessError:
                 print("nvidia-smi found but not working properly.")
         if shutil.which("rocm-smi"):
             try:
                 subprocess.run(["rocm-smi"], capture_output=True, text=True, check=True)
-                print("Detected AMD GPU(s)")
+                if self.debug:
+                    print("Detected AMD GPU(s)")
                 return "amd"
             except subprocess.CalledProcessError:
                 print("rocm-smi found but not working properly.")
