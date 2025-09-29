@@ -128,7 +128,7 @@ class BenchmarkBackend:
             try:
                 subprocess.run(rtc_dump, stdout=f, stderr=f, timeout=timeout, check=True)
                 timeout = 60 * self.num_runs # stall timeout check
-                subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, timeout=timeout, check=True)
+                subprocess.run(command, stdout=f, stderr=f, timeout=timeout, check=True)
             except subprocess.TimeoutExpired:
                 f.write("ERROR: Benchmark stalled and timed out.\n")
                 raise TimeoutError("Benchmark timed out")
