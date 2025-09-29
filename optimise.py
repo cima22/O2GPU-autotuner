@@ -51,12 +51,12 @@ def optimise(trial):
         
         for param_name, spec in kernels_param_space.items():
             if isinstance(spec, dict) and "grid_size" in spec and "block_size" in spec:
-                min_block_per_cu = spec["grid_size"] / backend.nCU
+                min_block_per_cu = spec["grid_size"] / backend.nSMs
                 max_threads = spec["block_size"]
-                if min_block_per_cu * max_threads / 256 > 10:
-                    return float("inf")  # Penalize this configuration
+                #if min_block_per_cu * max_threads / 256 > 10:
+                #    return float("inf")  # Penalize this configuration
 
-        result = backend.get_step_mean_time("optimisation_step", kernels_param_space, "pbpb", "50k")[0]
+        result = backend.get_step_mean_time("optimisation_step", kernels_param_space, "pbpb", "50k", "/shared/standalone/defaultParamsH100.h")[0]
     finally:
         os.chdir(original_cwd)
     return result
