@@ -2,7 +2,6 @@ import os
 import subprocess
 import sys
 import shutil
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
 
 def parse_read_results_output(output):
@@ -54,8 +53,9 @@ def run_on_all_subfolders(folder):
             continue
 
         try:
+            script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "read_results.py")
             result = subprocess.check_output(
-                ['python3', 'read_results.py', sub_path],
+                ['python3', script_path, sub_path],
                 text=True,
                 stderr=subprocess.STDOUT
             )
@@ -80,24 +80,22 @@ if __name__ == "__main__":
     for key, value in results.items():
         print(f"{key}: {value}")
     
-    original_cwd = os.getcwd()
+    TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../standalone"))
     try:
-        #os.chdir(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+        os.chdir(TUNER_WORKDIR)
         beamtype = "pbpb"
         ir = "50k"
-        backend = BenchmarkBackend(os.path.join(original_cwd, "tmp"))
-        tmp_file = os.path.join("tmp", "defaultParamsMI100.h")
-        shutil.copy("defaultParamsMI100.h", tmp_file)
-        BenchmarkBackend.update_param_file(results, filename=tmp_file)
-        old_default_mean, std_dev = backend.get_sync_mean_time(beamtype=beamtype, IR=ir, dump=os.path.join("param_dumps", "old_defaultMI100.par"))
-        print(f"Sync mean time old default for {beamtype} at {ir}Hz: {old_default_mean:.2f} ms ± {std_dev:.2f} ms")
-        default_mean, std_dev = backend.get_sync_mean_time(beamtype=beamtype, IR=ir, dump=os.path.join("param_dumps", "defaultMI100.par"))
-        print(f"Sync mean time new default for {beamtype} at {ir}Hz: {default_mean:.2f} ms ± {std_dev:.2f} ms")
+        backend = BenchmarkBackend("tmp")
+        tmp_file = os.path.join("tmp", "defaultParamsH100.h")
+        shutil.copy("defaultParamsH100.h", tmp_file)
+        backend.update_param_file(results, filename=tmp_file)
+        default_mean, std_dev = backend.get_sync_mean_time(beamtype=beamtype, IR=ir, dump="defaultH100.par")
+        print(f"Sync mean time default for {beamtype} at {ir}Hz: {default_mean:.2f} ms ± {std_dev:.2f} ms")
         mean, std_dev = backend.get_sync_mean_time(beamtype=beamtype, IR=ir, dump="parameters.out")
         print(f"Sync mean time optimised for {beamtype} at {ir}Hz: {mean:.2f} ms ± {std_dev:.2f} ms")
-        gain = 100.0 * (old_default_mean - mean) / old_default_mean
+        gain = 100.0 * (default_mean - mean) / default_mean
         print(f"Performance gain with optuna for {beamtype} at {ir}Hz: {gain:.2f}%")
         print()
-
-    finally:
-        os.chdir(original_cwd)
+    except Exception as e:
+        print(f"[ERROR] Benchmark run failed: {e}")
+        traceback.print_exc()

@@ -27,11 +27,13 @@ class BenchmarkBackend:
         if self.backend == "amd":
             self.profiler = "rocprofv2"
             self.profiler_options = ["--hip-activity",  "-o", "times_raw", "-d", f"{self.output_folder}"]
+            self.gpu_lang = "HIP"
             self.nSMs = BenchmarkBackend._AMD_get_number_of_compute_units()
             self._get_df_from_raw = self._AMD_get_df_from_raw
         if self.backend == "nvidia":
             self.profiler = "nsys"
             self.profiler_options = ["profile", "-o", f"{os.path.join(self.output_folder, 'report.nsys-rep')}", "--force-overwrite", "true"]
+            self.gpu_lang = "CUDA"
             self.nSMs = BenchmarkBackend._NVIDIA_get_number_of_streaming_multiprocessors()
             self._get_df_from_raw = self._NVIDIA_get_df_from_raw
         try:
@@ -122,7 +124,7 @@ class BenchmarkBackend:
             dataset = self.dataset
         rtc_dump = ["./ca", "--noEvents", "-g", "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
-        command += ["./ca", "-e", dataset, "--sync", "-g", "--memSize", "15000000000", "--preloadEvents", "--runs", str(self.num_runs), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+        command += ["./ca", "-e", dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--preloadEvents", "--runs", str(self.num_runs), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         timeout = 90
         with open(self.benchmark_backend_log, 'a') as f:
             try:

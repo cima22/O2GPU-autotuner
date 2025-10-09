@@ -1,9 +1,9 @@
 TrackletConstructor:
   grid_size:
     type: range
-    low: 96
-    high: 960
-    step: 96
+    low: 48
+    high: 480
+    step: 48
   block_size:
     type: range
     low: 32
@@ -13,9 +13,9 @@ TrackletConstructor:
 TrackletSelector:
   grid_size:
     type: range
-    low: 96
-    high: 960
-    step: 96
+    low: 48
+    high: 480
+    step: 48
   block_size:
     type: range
     low: 32
@@ -25,9 +25,9 @@ TrackletSelector:
 NeighboursCleaner:
   grid_size:
     type: range
-    low: 96
-    high: 960
-    step: 96
+    low: 48
+    high: 480
+    step: 48
   block_size:
     type: range
     low: 32
@@ -37,9 +37,9 @@ NeighboursCleaner:
 NeighboursFinder:
   grid_size:
     type: range
-    low: 96
-    high: 960
-    step: 96
+    low: 48
+    high: 480
+    step: 48
   block_size:
     type: range
     low: 32
@@ -49,9 +49,9 @@ NeighboursFinder:
 StartHitsSorter:
   grid_size:
     type: range
-    low: 96
-    high: 960
-    step: 96
+    low: 48
+    high: 480
+    step: 48
   block_size:
     type: range
     low: 32
@@ -61,9 +61,9 @@ StartHitsSorter:
 CreateTrackingData:
   grid_size:
     type: range
-    low: 96
-    high: 960
-    step: 96
+    low: 48
+    high: 480
+    step: 48
   block_size:
     type: range
     low: 32
@@ -73,9 +73,9 @@ CreateTrackingData:
 StartHitsFinder:
   grid_size:
     type: range
-    low: 96
-    high: 960
-    step: 96
+    low: 48
+    high: 480
+    step: 48
   block_size:
     type: range
     low: 32
@@ -85,9 +85,9 @@ StartHitsFinder:
 ExtrapolationTracking:
   grid_size:
     type: range
-    low: 96
-    high: 960
-    step: 96
+    low: 48
+    high: 480
+    step: 48
   block_size:
     type: range
     low: 32
