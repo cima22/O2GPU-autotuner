@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import shutil
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
 
 def parse_read_results_output(output):
@@ -86,10 +87,12 @@ if __name__ == "__main__":
         beamtype = "pbpb"
         ir = "50k"
         backend = BenchmarkBackend("tmp")
-        tmp_file = os.path.join("tmp", "defaultParamsH100.h")
-        shutil.copy("defaultParamsH100.h", tmp_file)
+        param_file = "defaultParamsRadeon.h"
+        param_dump = "defaultRadeon.par"
+        tmp_file = os.path.join("tmp", param_file)
+        shutil.copy(param_file, tmp_file)
         backend.update_param_file(results, filename=tmp_file)
-        default_mean, std_dev = backend.get_sync_mean_time(beamtype=beamtype, IR=ir, dump="defaultH100.par")
+        default_mean, std_dev = backend.get_sync_mean_time(beamtype=beamtype, IR=ir, dump=param_dump)
         print(f"Sync mean time default for {beamtype} at {ir}Hz: {default_mean:.2f} ms ± {std_dev:.2f} ms")
         mean, std_dev = backend.get_sync_mean_time(beamtype=beamtype, IR=ir, dump="parameters.out")
         print(f"Sync mean time optimised for {beamtype} at {ir}Hz: {mean:.2f} ms ± {std_dev:.2f} ms")

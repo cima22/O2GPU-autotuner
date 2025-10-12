@@ -93,6 +93,7 @@ class BenchmarkBackend:
     @staticmethod
     def _AMD_get_number_of_compute_units():
         cmd = "rocminfo | grep -A15 'GPU' | grep 'Compute Unit' | head -n1 | awk '{print $3}'"
+        cmd = "echo '#include <hip/hip_runtime.h>\n#include <stdio.h>\nint main(){hipDeviceProp_t p;hipGetDeviceProperties(&p,0);printf(\"%d\\n\",p.multiProcessorCount);return 0;}' > /tmp/sm.cpp && hipcc /tmp/sm.cpp -o /tmp/sm && /tmp/sm"
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
             nCU = int(result.stdout.strip())
@@ -122,13 +123,14 @@ class BenchmarkBackend:
             dataset = f"o2-{beamtype}-{IR}Hz-32"
         else:
             dataset = self.dataset
-        rtc_dump = ["./ca", "--noEvents", "-g", "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+        rtc_dump = ["./ca", "--noEvents", "-g", "--gpuType", self.gpu_lang, "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
         command += ["./ca", "-e", dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--preloadEvents", "--runs", str(self.num_runs), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         timeout = 90
         with open(self.benchmark_backend_log, 'a') as f:
             try:
-                subprocess.run(rtc_dump, stdout=f, stderr=f, timeout=timeout, check=True)
+                if self.backend == "nvidia":
+                    subprocess.run(rtc_dump, stdout=f, stderr=f, timeout=timeout, check=True)
                 timeout = 60 * self.num_runs # stall timeout check
                 subprocess.run(command, stdout=f, stderr=f, timeout=timeout, check=True)
             except subprocess.TimeoutExpired:
@@ -332,7 +334,7 @@ class BenchmarkBackend:
         dataset = dataset or (f"o2-{beamtype}-{IR}Hz-32" if beamtype and IR else self.dataset)
         command = [
             "./ca", "-e", dataset,
-            "--sync", "-g", "--memSize", "15000000000",
+            "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000",
             "--preloadEvents", "--runs", str(self.num_runs),
             "--RTCenable", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump
         ]
