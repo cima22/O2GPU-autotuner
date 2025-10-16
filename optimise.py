@@ -17,7 +17,7 @@ def optimise(trial):
     original_cwd = os.getcwd()
     try:
         os.chdir(TUNER_WORKDIR)
-        backend = BenchmarkBackend(os.path.join(original_cwd, "o2tuner"), backend="amd") #TODO: remove manual backend!!
+        backend = BenchmarkBackend(os.path.join(original_cwd, "o2tuner"))
         kernels_param_space = {}
 
         for param_name, spec in tune_config.items():
@@ -55,9 +55,10 @@ def optimise(trial):
                 min_block_per_cu = spec["grid_size"] / backend.nSMs
                 max_threads = spec["block_size"]
                 if min_block_per_cu * max_threads / 128 > 16:
+                    #pass
                     return float("inf")  # Penalize this configuration
 
-        mean, std_dev = backend.get_step_mean_time("optimisation_step", kernels_param_space, "pbpb", "50k", os.path.join(TUNER_WORKDIR, "defaultParamsRadeon.h"))
+        mean, std_dev = backend.get_step_mean_time("optimisation_step", kernels_param_space, dataset="o2-simple", filename=os.path.join(TUNER_WORKDIR, "defaultParamsH100.h"))
     finally:
         os.chdir(original_cwd)
     return mean

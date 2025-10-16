@@ -24,7 +24,7 @@ trials_map["mergerSectorRefit"]="100 25"
 trials_map["mergerTrackFit"]="100 25"
 trials_map["mergerCollect"]="100 25"
 trials_map["multikernel"]="200 50"
-trials_map["tracklet"]="400 100"
+#trials_map["tracklet"]="400 100"
 trials_map["clusterizer"]="400 100"
 trials_map["compressionStep1unattached"]="100 25"
 

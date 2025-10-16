@@ -118,14 +118,11 @@ class BenchmarkBackend:
         except subprocess.CalledProcessError as e:
             raise FileNotFoundError(f"{profiler} not found or not working properly.") from e
         
-    def profile_benchmark(self, beamtype=None, IR=None):
-        if beamtype is not None and IR is not None:
-            dataset = f"o2-{beamtype}-{IR}Hz-32"
-        else:
-            dataset = self.dataset
+    def profile_benchmark(self, dataset=None):
+        self.dataset = dataset or self.dataset
         rtc_dump = ["./ca", "--noEvents", "-g", "--gpuType", self.gpu_lang, "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
-        command += ["./ca", "-e", dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--preloadEvents", "--runs", str(self.num_runs), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+        command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--preloadEvents", "--runs", str(self.num_runs), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         timeout = 90
         with open(self.benchmark_backend_log, 'a') as f:
             try:
@@ -288,7 +285,7 @@ class BenchmarkBackend:
             BenchmarkBackend._write_stats_to_csv(output_file, ["block_size", "grid_size", "beamtype", "IR", "mean", "std_dev"], row)
         return (mean, std_dev)
 
-    def _compute_step_mean_time(self, step_name, kernels_config, beamtype, IR, write_to_csv=True):
+    def _compute_step_mean_time(self, step_name, kernels_config, dataset, write_to_csv=True):
         subviews = []
         durations = []
         self._get_views()
@@ -306,8 +303,8 @@ class BenchmarkBackend:
         std_dev = np.std(data)
         if write_to_csv:
             output_file = os.path.join(self.output_folder, f'{step_name}_step_stats.csv')
-            row = [[kernels_config, beamtype, IR, mean, std_dev]]
-            BenchmarkBackend._write_stats_to_csv(output_file, ["kernels_config", "beamtype", "IR", "mean", "std_dev"], row)
+            row = [[kernels_config, dataset, mean, std_dev]]
+            BenchmarkBackend._write_stats_to_csv(output_file, ["kernels_config", "dataset", "mean", "std_dev"], row)
         return (mean, std_dev)
     
     def get_kernel_mean_time(self, kernel_name, block_size, grid_size, beamtype, IR, filename="defaultParams.h"):
@@ -320,10 +317,11 @@ class BenchmarkBackend:
             return (float('inf'), 0.0)
         return self._compute_kernel_mean_time(kernel_name, block_size, grid_size, beamtype, IR)
 
-    def get_step_mean_time(self, step_name, kernels_config, beamtype=None, IR=None, filename="defaultParams.h"):
+    def get_step_mean_time(self, step_name, kernels_config, beamtype=None, IR=None, dataset=None, filename="defaultParams.h"):
         self.update_param_file(kernels_config, filename, log_file=self.benchmark_backend_log)
+        dataset = dataset or (f"o2-{beamtype}-{IR}Hz-32" if beamtype and IR else self.dataset)
         try:
-            self.profile_benchmark(beamtype, IR)
+            self.profile_benchmark(dataset)
         except (TimeoutError, RuntimeError) as e:
             print(f"Error during step benchmark: {e}")
             return (float('inf'), 0.0)
