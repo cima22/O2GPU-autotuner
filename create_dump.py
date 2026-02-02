@@ -84,25 +84,20 @@ if __name__ == "__main__":
     TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../standalone"))
     try:
         os.chdir(TUNER_WORKDIR)
-        beamtype = "pbpb"
-        ir = "50k"
-        #dataset = "o2-pbpb-50kHz-32"
-        dataset="o2-simple"
+        dataset="47kHz"
         backend = BenchmarkBackend("tmp")
-        param_file = "defaultParamsH100.h"
-        param_dump = "defaultH100.par"
+        param_file = "defaultParamsL40S.h"
+        param_dump = "defaultL40S.par"
         tmp_file = os.path.join("tmp", param_file)
         shutil.copy(param_file, tmp_file)
         backend.update_param_file(results, filename=tmp_file)
-        #default_mean, std_dev = backend.get_sync_mean_time(beamtype=beamtype, IR=ir, dump=param_dump)
-        default_mean, std_dev = backend.get_sync_mean_time(dataset=dataset, dump=param_dump)
-        print(f"Sync mean time default for {beamtype} at {ir}Hz: {default_mean:.2f} ms ± {std_dev:.2f} ms")
-        #mean, std_dev = backend.get_sync_mean_time(beamtype=beamtype, IR=ir, dump="parameters.out")
+        #default_mean, std_dev = backend.get_sync_mean_time(dataset=dataset, dump="defaultRadeon.par")
+        default_mean, std_dev = backend.get_sync_mean_time(dataset=dataset)
+        print(f"Sync mean time default: {default_mean:.2f} ms ± {std_dev:.2f} ms")
         mean, std_dev = backend.get_sync_mean_time(dataset=dataset, dump="parameters.out")
-        print(f"Sync mean time optimised for {beamtype} at {ir}Hz: {mean:.2f} ms ± {std_dev:.2f} ms")
+        print(f"Sync mean time optimised: {mean:.2f} ms ± {std_dev:.2f} ms")
         gain = 100.0 * (default_mean - mean) / default_mean
-        print(f"Performance gain with optuna for {beamtype} at {ir}Hz: {gain:.2f}%")
+        print(f"Performance gain with optuna: {gain:.2f}%")
         print()
     except Exception as e:
         print(f"[ERROR] Benchmark run failed: {e}")
-        traceback.print_exc()

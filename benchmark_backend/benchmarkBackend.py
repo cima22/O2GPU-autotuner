@@ -120,9 +120,9 @@ class BenchmarkBackend:
         
     def profile_benchmark(self, dataset=None):
         self.dataset = dataset or self.dataset
-        rtc_dump = ["./ca", "--noEvents", "-g", "--gpuType", self.gpu_lang, "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+        rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
-        command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--preloadEvents", "--runs", str(self.num_runs), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+        command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--preloadEvents", "-n", str(self.num_runs), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         timeout = 90
         with open(self.benchmark_backend_log, 'a') as f:
             try:
@@ -152,7 +152,7 @@ class BenchmarkBackend:
                 command = f"nsys export --type json --output {json_file} --separate-strings 1 --include-json 1 -f 1 {report_file}"
                 subprocess.run(command, shell=True, cwd=self.output_folder)
 
-    def update_param_file(self, kernels_config, filename, log_file=None):
+    def update_param_file(self, kernels_config, filename, dump_path=None, log_file=None):
         base_dir = os.path.dirname(os.path.abspath(filename))
         tmp_dir = os.path.join(base_dir, "tmp")
         os.makedirs(tmp_dir, exist_ok=True)
@@ -193,8 +193,8 @@ class BenchmarkBackend:
                     f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+)(, *[0-9]+)*(, *[0-9]+)*/\\1, {grid_replacement}/' {tmp_file}"
                 )
                 os.system(sed_cmd_grid)
-
-        root_command = f"echo -e '#define PARAMETER_FILE \"{tmp_file}\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"parameters.out\")\\n.q\\n' | root -l -b"
+        output = dump_path if dump_path else "parameters.out"
+        root_command = f"echo -e '#define PARAMETER_FILE \"{tmp_file}\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"{output}\")\\n.q\\n' | root -l -b"
         if log_file is not None:
             with open(log_file, 'a') as f:
                 subprocess.run(root_command, shell=True, stdout=f, stderr=subprocess.STDOUT)
@@ -328,14 +328,14 @@ class BenchmarkBackend:
         return self._compute_step_mean_time(step_name, kernels_config, beamtype, IR)
     
     def get_sync_mean_time(self, dump=None, beamtype=None, IR=None, dataset=None):
-        self.param_dump = dump or self.param_dump or "param_dumps/default.par"
         dataset = dataset or (f"o2-{beamtype}-{IR}Hz-32" if beamtype and IR else self.dataset)
         command = [
             "./ca", "-e", dataset,
             "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000",
             "--preloadEvents", "--runs", str(self.num_runs),
-            "--RTCenable", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump
-        ]
+            "--RTCenable", "1"]
+        if dump:
+            command += ["--RTCTECHloadLaunchBoundsFromFile", dump]
         timeout = 30 + 45 * self.num_runs  # stall timeout check
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=True)
