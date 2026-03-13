@@ -1,2 +1,3 @@
-# O2GPU-autotuner
-Automated tool to tune O2 GPU kernels - limited to TPC kernels.
+# O2GPU-autotuner - Timer only
+## Branch for kernel timing only
+To test, clone the repository into the directory with the `.ca` executable, then launch `O2GPU-autotuner/try_timer.py`
