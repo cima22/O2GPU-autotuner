@@ -1,6 +1,6 @@
 # test_backend.py
 
-from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
+from benchmark_backend.benchmarkBackend import BenchmarkBackend
 
 def main():
 
