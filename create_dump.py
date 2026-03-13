@@ -84,13 +84,13 @@ if __name__ == "__main__":
     TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../standalone"))
     try:
         os.chdir(TUNER_WORKDIR)
-        dataset="47kHz"
+        dataset="lhc24ar_raw"
         backend = BenchmarkBackend("tmp")
-        param_file = "defaultParamsL40S.h"
+        param_file = "defaultParams.h"
         param_dump = "defaultL40S.par"
         tmp_file = os.path.join("tmp", param_file)
         shutil.copy(param_file, tmp_file)
-        backend.update_param_file(results, filename=tmp_file)
+        #backend.update_param_file(results, filename=tmp_file)
         #default_mean, std_dev = backend.get_sync_mean_time(dataset=dataset, dump="defaultRadeon.par")
         default_mean, std_dev = backend.get_sync_mean_time(dataset=dataset)
         print(f"Sync mean time default: {default_mean:.2f} ms ± {std_dev:.2f} ms")
