@@ -156,64 +156,6 @@ class BenchmarkBackend:
                 command = f"nsys export --type json --output {json_file} --separate-strings 1 --include-json 1 -f 1 {report_file}"
                 subprocess.run(command, shell=True, cwd=self.output_folder)
 
-    def update_param_file(self, kernels_config, filename, dump_path=None, log_file=None):
-        base_dir = os.path.dirname(os.path.abspath(filename))
-        tmp_dir = os.path.join(base_dir, "tmp")
-        os.makedirs(tmp_dir, exist_ok=True)
-        base = os.path.basename(filename)
-        tmp_file = os.path.join(tmp_dir, base)
-        shutil.copyfile(filename, tmp_file)
-        
-        macro_updates = []
-        kernel_updates = []
-
-        for key, value in kernels_config.items():
-            if isinstance(value, dict) and ("block_size" in value or "grid_size" in value):
-                kernel_updates.append((key, value))
-            elif key.startswith("PAR_"):
-                macro_name = f"GPUCA_{key}"
-                macro_updates.append((macro_name, value))
-
-        for macro_name, macro_value in macro_updates:
-            sed_command = f"sed -E -i 's|^#define {macro_name} .*|#define {macro_name} {macro_value}|' {tmp_file}"
-            os.system(sed_command)
-
-        for kernel_name, config in kernel_updates:
-            if "block_size" in config:
-                block_size = config["block_size"]
-                sed_cmd_block = (
-                    f"sed -E -i '/^\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+/"
-                    f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+)[0-9]+/\\1{block_size}/' {tmp_file}"
-                )
-                os.system(sed_cmd_block)
-            if "grid_size" in config:
-                grid_size = config["grid_size"]
-                if grid_size % self.nSMs == 0:
-                    grid_replacement = f"{grid_size // self.nSMs}"
-                else:
-                    grid_replacement = f"{grid_size // self.nSMs}, {grid_size}"
-                sed_cmd_grid = (
-                    f"sed -E -i '/^\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+/"
-                    f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+)(, *[0-9]+)*(, *[0-9]+)*/\\1, {grid_replacement}/' {tmp_file}"
-                )
-                os.system(sed_cmd_grid)
-        output = dump_path if dump_path else "parameters.out"
-        root_command = f"echo -e '#define PARAMETER_FILE \"{tmp_file}\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"{output}\")\\n.q\\n' | root -l -b"
-        if log_file is not None:
-            with open(log_file, 'a') as f:
-                subprocess.run(root_command, shell=True, stdout=f, stderr=subprocess.STDOUT)
-        else:
-            subprocess.run(root_command, shell=True)
-
-    @staticmethod
-    def _write_stats_to_csv(output_file, fieldnames, rows):
-        file_exists = os.path.exists(output_file)
-        with open(output_file, 'a', newline='') as outfile:
-            writer = csv.writer(outfile)
-            if not file_exists:
-                writer.writerow(fieldnames)
-            writer.writerows(rows)
-
     def _AMD_get_df_from_raw(self):
         input_file = os.path.join(self.output_folder, 'times_raw.csv')
         stats = pd.read_csv(input_file)
