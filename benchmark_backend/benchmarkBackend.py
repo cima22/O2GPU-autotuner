@@ -1,3 +1,4 @@
+from fileinput import filename
 import os
 import subprocess
 import csv
@@ -9,6 +10,7 @@ import pandas as pd
 import glob
 import shutil
 import json
+import re
 
 class BenchmarkBackend:
     def __init__(self, output_folder, backend="auto", debug=False):
@@ -118,15 +120,18 @@ class BenchmarkBackend:
         except subprocess.CalledProcessError as e:
             raise FileNotFoundError(f"{profiler} not found or not working properly.") from e
         
-    def profile_benchmark(self, dataset=None):
+    def profile_benchmark(self, dataset=None, RTC=True):
         self.dataset = dataset or self.dataset
-        rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+        if RTC and self.backend == "nvidia":
+            rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
-        command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--preloadEvents", "-n", str(self.num_runs), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+        command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--preloadEvents", "-r", str(self.num_runs)]
+        if RTC:
+            command += ["--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         timeout = 90
         with open(self.benchmark_backend_log, 'a') as f:
             try:
-                if self.backend == "nvidia":
+                if RTC and self.backend == "nvidia":
                     subprocess.run(rtc_dump, stdout=f, stderr=f, timeout=timeout, check=True)
                 timeout = 60 * self.num_runs # stall timeout check
                 subprocess.run(command, stdout=f, stderr=f, timeout=timeout, check=True)
@@ -152,54 +157,117 @@ class BenchmarkBackend:
                 command = f"nsys export --type json --output {json_file} --separate-strings 1 --include-json 1 -f 1 {report_file}"
                 subprocess.run(command, shell=True, cwd=self.output_folder)
 
-    def update_param_file(self, kernels_config, filename, dump_path=None, log_file=None):
-        base_dir = os.path.dirname(os.path.abspath(filename))
-        tmp_dir = os.path.join(base_dir, "tmp")
-        os.makedirs(tmp_dir, exist_ok=True)
-        base = os.path.basename(filename)
-        tmp_file = os.path.join(tmp_dir, base)
-        shutil.copyfile(filename, tmp_file)
-        
-        macro_updates = []
-        kernel_updates = []
+    def update_csv_param_file(self, kernels_config, filename, arch, compile=True):
+        df = pd.read_csv(filename)
+
+        if arch not in df.columns:
+            raise ValueError(f"Architecture '{arch}' not found in CSV")
+
+        df["Architecture"] = df["Architecture"].fillna("").str.strip()
+
+        def parse_lb(val):
+            """
+            Parse:
+            [block, grid]
+            [block]
+            "MACRO"
+            """
+            if pd.isna(val):
+                return None, None
+
+            val = str(val).strip()
+
+            # Case 1: [ ... ]
+            if val.startswith("[") and val.endswith("]"):
+                content = val[1:-1]
+                parts = [p.strip() for p in content.split(",")]
+
+                if len(parts) == 1:
+                    return parts[0], None
+                elif len(parts) >= 2:
+                    return parts[0], ",".join(parts[1:]).strip()
+
+            # Case 2: macro or raw value
+            return val, None
+
+        def format_grid(grid):
+            if grid % self.nSMs == 0:
+                return f"{grid // self.nSMs}"
+            else:
+                return f"{grid // self.nSMs}, {grid}"
 
         for key, value in kernels_config.items():
-            if isinstance(value, dict) and ("block_size" in value or "grid_size" in value):
-                kernel_updates.append((key, value))
-            elif key.startswith("PAR_"):
-                macro_name = f"GPUCA_{key}"
-                macro_updates.append((macro_name, value))
 
-        for macro_name, macro_value in macro_updates:
-            sed_command = f"sed -E -i 's|^#define {macro_name} .*|#define {macro_name} {macro_value}|' {tmp_file}"
-            os.system(sed_command)
+            # -------------------------
+            # Find row
+            # -------------------------
+            row_mask = df["Architecture"] == key
 
-        for kernel_name, config in kernel_updates:
-            if "block_size" in config:
-                block_size = config["block_size"]
-                sed_cmd_block = (
-                    f"sed -E -i '/^\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+/"
-                    f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+)[0-9]+/\\1{block_size}/' {tmp_file}"
-                )
-                os.system(sed_cmd_block)
-            if "grid_size" in config:
-                grid_size = config["grid_size"]
-                if grid_size % self.nSMs == 0:
-                    grid_replacement = f"{grid_size // self.nSMs}"
+            if not row_mask.any():
+                partial_mask = df["Architecture"].str.contains(key, case=True, na=False)
+                matches = df.loc[partial_mask, "Architecture"]
+
+                if len(matches) != 1:
+                    continue
+
+                row_mask = partial_mask
+
+            # -------------------------
+            # Update kernel params
+            # -------------------------
+            if isinstance(value, dict):
+
+                block_new = value.get("block_size")
+                grid_new = value.get("grid_size")
+
+                old_val = df.loc[row_mask, arch].values[0]
+                block_old, grid_old = parse_lb(old_val)
+
+                # ---- Preserve macro if exists ----
+                block = block_new if block_new is not None else block_old
+                grid = grid_new if grid_new is not None else grid_old
+
+                # ---- Format grid ----
+                if isinstance(grid, int):
+                    grid_repr = format_grid(grid)
                 else:
-                    grid_replacement = f"{grid_size // self.nSMs}, {grid_size}"
-                sed_cmd_grid = (
-                    f"sed -E -i '/^\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+/"
-                    f"s/^(\\s*#define[ \\t]+GPUCA_LB_GPUTPC{kernel_name}[ \\t]+[0-9]+)(, *[0-9]+)*(, *[0-9]+)*/\\1, {grid_replacement}/' {tmp_file}"
-                )
-                os.system(sed_cmd_grid)
-        output = dump_path if dump_path else "parameters.out"
-        root_command = f"echo -e '#define PARAMETER_FILE \"{tmp_file}\"\\ngInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n.x share/GPU/tools/dumpGPUDefParam.C(\"{output}\")\\n.q\\n' | root -l -b"
-        if log_file is not None:
-            with open(log_file, 'a') as f:
-                subprocess.run(root_command, shell=True, stdout=f, stderr=subprocess.STDOUT)
-        else:
-            subprocess.run(root_command, shell=True)
+                    grid_repr = grid
+
+                # ---- FINAL STRING ----
+                if block is not None and grid_repr is not None:
+                    df.loc[row_mask, arch] = f"[{block}, {grid_repr}]"
+
+                elif block is not None:
+                    df.loc[row_mask, arch] = f"[{block}]"
+
+                else:
+                    # 🚨 CRITICAL FIX:
+                    # If only grid is provided but block exists → keep block
+                    if block_old is not None and grid_repr is not None:
+                        df.loc[row_mask, arch] = f"[{block_old}, {grid_repr}]"
+                    elif grid_repr is not None:
+                        # fallback (rare)
+                        df.loc[row_mask, arch] = f"[{grid_repr}]"
+
+            else:
+                df.loc[row_mask, arch] = value
+
+        df.to_csv(filename, index=False)
+
+        # -------------------------
+        # Compile
+        # -------------------------
+        if compile:
+            try:
+                nproc = os.cpu_count() or 1
+                cmd = ["make", "-j", str(nproc)]
+
+                with open(self.benchmark_backend_log, "a") as f:
+                    subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, check=True)
+
+            except subprocess.CalledProcessError:
+                print("[ERROR] Compilation failed")
+                raise
 
     @staticmethod
     def _write_stats_to_csv(output_file, fieldnames, rows):
@@ -358,3 +426,17 @@ class BenchmarkBackend:
             return float('inf'), 0.0
         wall_times_ms = np.array(wall_times) / 1000.0 
         return np.mean(wall_times_ms), np.std(wall_times_ms)
+
+    def get_step_mean_time_no_RTC(self, step_name, kernels_config, arch, dataset=None, filename="src/GPU/GPUTracking/Definitions/Parameters/GPUParameters.csv"):
+        try:
+            self.update_csv_param_file(kernels_config, filename, arch, compile=True)
+        except subprocess.CalledProcessError:
+            print("[WARNING] Compilation failed")
+            return (float('inf'), 0.0)
+        dataset = dataset or self.dataset
+        try:
+            self.profile_benchmark(dataset, RTC=False)
+        except (TimeoutError, RuntimeError) as e:
+            print(f"Error during step benchmark: {e}")
+            return (float('inf'), 0.0)
+        return self._compute_step_mean_time(step_name, kernels_config, dataset)

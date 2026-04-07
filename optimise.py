@@ -55,13 +55,14 @@ def optimise(trial):
                 min_block_per_cu = spec["grid_size"] / backend.nSMs
                 max_threads = spec["block_size"]
                 #if min_block_per_cu * max_threads > 2048:
-                if min_block_per_cu * max_threads > 1536:
+                #if min_block_per_cu * max_threads > 1536:
                 #if min_block_per_cu * max_threads / 128 > 16:
-                #if min_block_per_cu * max_threads / 256 > 32:
-                    #pass
-                    return float("inf")  # Penalize this configuration
+                if min_block_per_cu * max_threads / 256 > 32:
+                    pass
+                    #return float("inf")  # Penalize this configuration
 
-        mean, std_dev = backend.get_step_mean_time("optimisation_step", kernels_param_space, dataset="47kHz", filename=os.path.join(TUNER_WORKDIR, "defaultParamsL40S.h"))
+        #mean, std_dev = backend.get_step_mean_time("optimisation_step", kernels_param_space, dataset="47kHz", filename=os.path.join(TUNER_WORKDIR, "defaultParamsL40S.h"))
+        mean, _ = backend.get_step_mean_time_no_RTC("optimisation_step", kernels_param_space, arch="MI100", dataset="o2-pbpb-42kHz-32")
     finally:
         os.chdir(original_cwd)
     return mean
