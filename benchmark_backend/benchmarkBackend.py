@@ -33,6 +33,7 @@ class BenchmarkBackend:
             self.gpu_lang = "HIP"
             self.warpSize = BenchmarkBackend._AMD_get_warp_size()
             self.nSMs = BenchmarkBackend._AMD_get_number_of_compute_units()
+            self.maxThreadsPerMultiProcessor = BenchmarkBackend._AMD_get_max_threads_per_multi_processor()
             self._get_df_from_raw = self._AMD_get_df_from_raw
         if self.backend == "nvidia":
             self.profiler = "nsys"
@@ -40,6 +41,7 @@ class BenchmarkBackend:
             self.gpu_lang = "CUDA"
             self.warpSize = BenchmarkBackend._NVIDIA_get_warp_size()
             self.nSMs = BenchmarkBackend._NVIDIA_get_number_of_streaming_multiprocessors()
+            self.maxThreadsPerMultiProcessor = BenchmarkBackend._NVIDIA_get_max_threads_per_multi_processor()
             self._get_df_from_raw = self._NVIDIA_get_df_from_raw
         try:
             BenchmarkBackend._detect_profiler(self.profiler)
@@ -96,10 +98,6 @@ class BenchmarkBackend:
     #    return vendors[0]
         
     @staticmethod
-    def _NVIDIA_get_warp_size():
-        return 32
-    
-    @staticmethod
     def _AMD_get_warp_size():
         cmd = "echo '#include <hip/hip_runtime.h>\n#include <stdio.h>\nint main(){hipDeviceProp_t p;hipGetDeviceProperties(&p,0);printf(\"%d\\n\",p.warpSize);return 0;}' > /tmp/warp.cpp && hipcc /tmp/warp.cpp -o /tmp/warp && /tmp/warp"
         try:
@@ -119,6 +117,20 @@ class BenchmarkBackend:
         except (subprocess.CalledProcessError, ValueError):
             nCU = 1
         return nCU
+
+    @staticmethod
+    def _AMD_get_max_threads_per_multi_processor():
+        cmd = "echo '#include <hip/hip_runtime.h>\n#include <stdio.h>\nint main(){hipDeviceProp_t p;hipGetDeviceProperties(&p,0);printf(\"%d\\n\",p.maxThreadsPerMultiProcessor);return 0;}' > /tmp/maxThreads.cpp && hipcc /tmp/maxThreads.cpp -o /tmp/maxThreads && /tmp/maxThreads"
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+            maxThreadsPerMultiProcessor = int(result.stdout.strip())
+        except (subprocess.CalledProcessError, ValueError):
+            maxThreadsPerMultiProcessor = 2560
+        return maxThreadsPerMultiProcessor
+    
+    @staticmethod
+    def _NVIDIA_get_warp_size():
+        return 32
     
     @staticmethod
     def _NVIDIA_get_number_of_streaming_multiprocessors():
@@ -129,6 +141,16 @@ class BenchmarkBackend:
         except (subprocess.CalledProcessError, ValueError):
             nSM = 1
         return nSM
+    
+    @staticmethod
+    def _NVIDIA_get_max_threads_per_sm():
+        cmd = "echo '#include <cuda_runtime.h>\n#include <stdio.h>\nint main(){cudaDeviceProp p;cudaGetDeviceProperties(&p,0);printf(\"%d\\n\",p.maxThreadsPerMultiProcessor);return 0;}' > /tmp/max_threads.cu && nvcc /tmp/max_threads.cu -o /tmp/max_threads && /tmp/max_threads"
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+            max_threads = int(result.stdout.strip())
+        except (subprocess.CalledProcessError, ValueError):
+            max_threads = 2048
+        return max_threads
 
     @staticmethod
     def _detect_profiler(profiler):

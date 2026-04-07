@@ -1,13 +1,20 @@
 #!/bin/bash
 
 if [ -z "$1" ]; then
-  echo "Usage: $0 <output_folder>"
+  echo "Usage: $0 <output_folder> [dataset]"
   exit 1
 fi
 
 OUTPUT_DIR="$(realpath "$1")"
+DATASET_ARG="$2"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export TUNER_WORKDIR=$(realpath "$TUNER_WORKDIR")
+
+if [ -n "$DATASET_ARG" ]; then
+  export TUNER_DATASET="$DATASET_ARG"
+  echo "Using dataset: $TUNER_DATASET"
+fi
 
 if [ -d "$OUTPUT_DIR" ]; then
   read -p "Directory '$OUTPUT_DIR' already exists. Do you want to continue? [y/N] " response
@@ -20,13 +27,6 @@ else
 fi
 
 declare -A trials_map
-#trials_map["mergerSectorRefit"]="100 25"
-#trials_map["mergerTrackFit"]="100 25"
-#trials_map["mergerCollect"]="100 25"
-#trials_map["multikernel"]="200 50"
-#trials_map["clusterizer"]="400 100"
-#trials_map["compressionStep1unattached"]="100 25"
-#trials_map["tracklet"]="400 100"
 
 trials_map["mergerSectorRefit"]="4 2"
 trials_map["mergerTrackFit"]="4 2"
@@ -35,6 +35,14 @@ trials_map["multikernel"]="4 2"
 trials_map["clusterizer"]="4 2"
 trials_map["compressionStep1unattached"]="4 2"
 trials_map["tracklet"]="4 2"
+
+#trials_map["mergerSectorRefit"]="100 25"
+#trials_map["mergerTrackFit"]="100 25"
+#trials_map["mergerCollect"]="100 25"
+#trials_map["multikernel"]="200 50"
+#trials_map["clusterizer"]="400 100"
+#trials_map["compressionStep1unattached"]="100 25"
+#trials_map["tracklet"]="400 100"
 
 COMMON_CONFIG=$SCRIPT_DIR/"config.yaml"
 TMP_CONFIG="$OUTPUT_DIR"/tmp_config.yaml
@@ -47,7 +55,10 @@ for yaml_file in "${!trials_map[@]}"; do
   cp "$COMMON_CONFIG" "$TMP_CONFIG"
   sed -i "s/trials: .*/trials: $trials/" $TMP_CONFIG
   sed -i "s/n_startup_trials: .*/n_startup_trials: $startup/" $TMP_CONFIG
+
   export TUNE_SPACE_PATH="${TUNE_SPACE_DIR}/${yaml_file}.yaml"
+  export TUNE_SPACE_NAME="$yaml_file"
+
   cd $SCRIPT_DIR
   o2tuner -c $TMP_CONFIG -w "$OUTPUT_DIR/${yaml_file}_tuning" -s opt1
 done

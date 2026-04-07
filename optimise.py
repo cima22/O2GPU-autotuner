@@ -6,6 +6,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 TUNE_SPACE_PATH = os.getenv("TUNE_SPACE_PATH", os.path.join(os.path.dirname(__file__), "tune_space.yaml"))
 TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../standalone"))
+TUNE_SPACE_NAME = os.getenv("TUNE_SPACE_NAME")
+TUNER_DATASET = os.getenv("TUNER_DATASET", "o2-pbpb-47kHz-32")
+TUNER_PARAMETER_FILE = os.getenv("TUNER_PARAMETER_FILE", os.path.join(TUNER_WORKDIR, "defaultParams.h"))
 
 with open(TUNE_SPACE_PATH, "r") as f:
     tune_config = yaml.safe_load(f)
@@ -54,14 +57,10 @@ def optimise(trial):
             if isinstance(spec, dict) and "blocks_per_sm" in spec and "block_size" in spec:
                 min_block_per_cu = spec["blocks_per_sm"]
                 max_threads = spec["block_size"]
-                #if min_block_per_cu * max_threads > 2048:
-                #if min_block_per_cu * max_threads > 1536:
-                #if min_block_per_cu * max_threads / 128 > 16:
-                if min_block_per_cu * max_threads / 256 > 32:
-                    pass
-                    #return float("inf")  # Penalize this configuration
+                if (min_block_per_cu * max_threads > backend.maxThreadsPerMultiProcessor) and (TUNE_SPACE_NAME != "tracklet"):
+                    return float("inf")  # Penalize this configuration
 
-        mean, std_dev = backend.get_step_mean_time("optimisation_step", kernels_param_space, dataset="47kHz", filename=os.path.join(TUNER_WORKDIR, "defaultParams.h"))
+        mean, std_dev = backend.get_step_mean_time("optimisation_step", kernels_param_space, dataset=TUNER_DATASET, filename=TUNER_PARAMETER_FILE)
     finally:
         os.chdir(original_cwd)
     return mean
