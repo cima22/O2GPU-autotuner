@@ -30,12 +30,14 @@ class BenchmarkBackend:
             self.profiler = "rocprofv2"
             self.profiler_options = ["--hip-activity",  "-o", "times_raw", "-d", f"{self.output_folder}"]
             self.gpu_lang = "HIP"
+            self.warpSize = BenchmarkBackend._AMD_get_warp_size()
             self.nSMs = BenchmarkBackend._AMD_get_number_of_compute_units()
             self._get_df_from_raw = self._AMD_get_df_from_raw
         if self.backend == "nvidia":
             self.profiler = "nsys"
             self.profiler_options = ["profile", "-o", f"{os.path.join(self.output_folder, 'report.nsys-rep')}", "--force-overwrite", "true"]
             self.gpu_lang = "CUDA"
+            self.warpSize = BenchmarkBackend._NVIDIA_get_warp_size()
             self.nSMs = BenchmarkBackend._NVIDIA_get_number_of_streaming_multiprocessors()
             self._get_df_from_raw = self._NVIDIA_get_df_from_raw
         try:
@@ -92,6 +94,20 @@ class BenchmarkBackend:
     #    print("Using the first one:", vendors[0])
     #    return vendors[0]
         
+    @staticmethod
+    def _NVIDIA_get_warp_size():
+        return 32
+    
+    @staticmethod
+    def _AMD_get_warp_size():
+        cmd = "echo '#include <hip/hip_runtime.h>\n#include <stdio.h>\nint main(){hipDeviceProp_t p;hipGetDeviceProperties(&p,0);printf(\"%d\\n\",p.warpSize);return 0;}' > /tmp/warp.cpp && hipcc /tmp/warp.cpp -o /tmp/warp && /tmp/warp"
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+            warp_size = int(result.stdout.strip())
+        except (subprocess.CalledProcessError, ValueError):
+            warp_size = 64
+        return warp_size
+
     @staticmethod
     def _AMD_get_number_of_compute_units():
         cmd = "rocminfo | grep -A15 'GPU' | grep 'Compute Unit' | head -n1 | awk '{print $3}'"
@@ -157,117 +173,66 @@ class BenchmarkBackend:
                 command = f"nsys export --type json --output {json_file} --separate-strings 1 --include-json 1 -f 1 {report_file}"
                 subprocess.run(command, shell=True, cwd=self.output_folder)
 
-    def update_csv_param_file(self, kernels_config, filename, arch, compile=True):
-        df = pd.read_csv(filename)
-
-        if arch not in df.columns:
-            raise ValueError(f"Architecture '{arch}' not found in CSV")
-
-        df["Architecture"] = df["Architecture"].fillna("").str.strip()
-
-        def parse_lb(val):
-            """
-            Parse:
-            [block, grid]
-            [block]
-            "MACRO"
-            """
-            if pd.isna(val):
-                return None, None
-
-            val = str(val).strip()
-
-            # Case 1: [ ... ]
-            if val.startswith("[") and val.endswith("]"):
-                content = val[1:-1]
-                parts = [p.strip() for p in content.split(",")]
-
-                if len(parts) == 1:
-                    return parts[0], None
-                elif len(parts) >= 2:
-                    return parts[0], ",".join(parts[1:]).strip()
-
-            # Case 2: macro or raw value
-            return val, None
-
-        def format_grid(grid):
-            if grid % self.nSMs == 0:
-                return f"{grid // self.nSMs}"
-            else:
-                return f"{grid // self.nSMs}, {grid}"
-
+    def update_param_file(self, kernels_config, filename, dump_path=None, log_file=None):
+        base_dir = os.path.dirname(os.path.abspath(filename))
+        tmp_dir = os.path.join(base_dir, "tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        tmp_file = os.path.join(tmp_dir, os.path.basename(filename))
+        shutil.copyfile(filename, tmp_file)
+        macro_updates = {}
+        kernel_updates = {}
         for key, value in kernels_config.items():
-
-            # -------------------------
-            # Find row
-            # -------------------------
-            row_mask = df["Architecture"] == key
-
-            if not row_mask.any():
-                partial_mask = df["Architecture"].str.contains(key, case=True, na=False)
-                matches = df.loc[partial_mask, "Architecture"]
-
-                if len(matches) != 1:
-                    continue
-
-                row_mask = partial_mask
-
-            # -------------------------
-            # Update kernel params
-            # -------------------------
             if isinstance(value, dict):
+                kernel_updates[key] = value
+            elif key.startswith("PAR_"):
+                macro_updates[f"GPUCA_{key}"] = value
+        with open(tmp_file, "r") as f:
+            lines = f.readlines()
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            for macro_name, macro_value in macro_updates.items():
+                if stripped.startswith(f"#define {macro_name}"):
+                    line = f"#define {macro_name} {macro_value}\n"
+                    break
+            for kernel_name, config in kernel_updates.items():
+                define_name = f"GPUCA_LB_GPUTPC{kernel_name}"
+                match = re.match(rf"^(\s*#define\s+{define_name}\s+)(.*)", line)
+                if not match:
+                    continue
+                prefix = match.group(1)
+                rest = match.group(2).strip()
+                existing_vals = [v.strip() for v in rest.split(",") if v.strip()]
+                if not existing_vals:
+                    continue
+                if "block_size" in config:
+                    if len(existing_vals) >= 1:
+                        existing_vals[0] = str(config["block_size"])
+                    else:
+                        existing_vals = [str(config["block_size"])]
+                if "blocks_per_sm" in config:
+                    if len(existing_vals) >= 2:
+                        existing_vals[1] = str(config["blocks_per_sm"])
+                    else:
+                        existing_vals.append(str(config["blocks_per_sm"]))
+                new_values = ", ".join(existing_vals)
+                line = f"{prefix}{new_values}\n"
+                break
+            new_lines.append(line)
 
-                block_new = value.get("block_size")
-                grid_new = value.get("grid_size")
-
-                old_val = df.loc[row_mask, arch].values[0]
-                block_old, grid_old = parse_lb(old_val)
-
-                # ---- Preserve macro if exists ----
-                block = block_new if block_new is not None else block_old
-                grid = grid_new if grid_new is not None else grid_old
-
-                # ---- Format grid ----
-                if isinstance(grid, int):
-                    grid_repr = format_grid(grid)
-                else:
-                    grid_repr = grid
-
-                # ---- FINAL STRING ----
-                if block is not None and grid_repr is not None:
-                    df.loc[row_mask, arch] = f"[{block}, {grid_repr}]"
-
-                elif block is not None:
-                    df.loc[row_mask, arch] = f"[{block}]"
-
-                else:
-                    # 🚨 CRITICAL FIX:
-                    # If only grid is provided but block exists → keep block
-                    if block_old is not None and grid_repr is not None:
-                        df.loc[row_mask, arch] = f"[{block_old}, {grid_repr}]"
-                    elif grid_repr is not None:
-                        # fallback (rare)
-                        df.loc[row_mask, arch] = f"[{grid_repr}]"
-
-            else:
-                df.loc[row_mask, arch] = value
-
-        df.to_csv(filename, index=False)
-
-        # -------------------------
-        # Compile
-        # -------------------------
-        if compile:
-            try:
-                nproc = os.cpu_count() or 1
-                cmd = ["make", "-j", str(nproc)]
-
-                with open(self.benchmark_backend_log, "a") as f:
-                    subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, check=True)
-
-            except subprocess.CalledProcessError:
-                print("[ERROR] Compilation failed")
-                raise
+        with open(tmp_file, "w") as f:
+            f.writelines(new_lines)
+        output = dump_path if dump_path else "parameters.out"
+        root_command = (
+            f"echo -e '#define PARAMETER_FILE \"{tmp_file}\"\\n"
+            f"gInterpreter->AddIncludePath(\"'`pwd`'/include/GPU\");\\n"
+            f".x share/GPU/tools/dumpGPUDefParam.C(\"{output}\")\\n.q\\n' | root -l -b"
+        )
+        if log_file:
+            with open(log_file, "a") as f:
+                subprocess.run(root_command, shell=True, stdout=f, stderr=subprocess.STDOUT, check=True)
+        else:
+            subprocess.run(root_command, shell=True, check=True)
 
     @staticmethod
     def _write_stats_to_csv(output_file, fieldnames, rows):
@@ -339,7 +304,7 @@ class BenchmarkBackend:
         self.views = views
         return views
 
-    def _compute_kernel_mean_time(self, kernel_name, block_size, grid_size, beamtype, IR, write_to_csv=True):
+    def _compute_kernel_mean_time(self, kernel_name, block_size, grid_size, write_to_csv=True):
         kernel_stats = self._get_df_from_raw()
         filtered = kernel_stats[kernel_stats["Kernel_Name"].str.contains(kernel_name)]
         if filtered.empty:
@@ -349,8 +314,8 @@ class BenchmarkBackend:
         std_dev = np.std(data)
         if write_to_csv:
             output_file = os.path.join(self.output_folder, f'{kernel_name}_stats.csv')
-            row = [[block_size, grid_size, beamtype, IR, mean, std_dev]]
-            BenchmarkBackend._write_stats_to_csv(output_file, ["block_size", "grid_size", "beamtype", "IR", "mean", "std_dev"], row)
+            row = [[block_size, grid_size, self.dataset, mean, std_dev]]
+            BenchmarkBackend._write_stats_to_csv(output_file, ["block_size", "grid_size", "dataset", "mean", "std_dev"], row)
         return (mean, std_dev)
 
     def _compute_step_mean_time(self, step_name, kernels_config, dataset, write_to_csv=True):

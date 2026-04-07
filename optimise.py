@@ -12,7 +12,6 @@ with open(TUNE_SPACE_PATH, "r") as f:
 
 from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
 
-
 def optimise(trial):
     original_cwd = os.getcwd()
     try:
@@ -23,36 +22,37 @@ def optimise(trial):
         for param_name, spec in tune_config.items():
             if param_name.startswith("PAR_"):
                 if spec["type"] == "range":
-                    kernels_param_space[param_name] = trial.suggest_int(param_name, spec["low"], spec["high"])
+                    kernels_param_space[param_name] = trial.suggest_int(param_name, spec["min"], spec["max"])
                 elif spec["type"] == "values":
                     kernels_param_space[param_name] = trial.suggest_categorical(param_name, spec["values"])
             else:
-                grid_value = None
+                blocks_per_sm = None
                 block_value = None
 
-                if "grid_size" in spec:
-                    grid_spec = spec["grid_size"]
-                    if grid_spec["type"] == "range":
-                        grid_value = trial.suggest_int(f"{param_name}_grid", grid_spec["low"], grid_spec["high"], step=grid_spec.get("step", 1))
-                    elif grid_spec["type"] == "values":
-                        grid_value = trial.suggest_categorical(f"{param_name}_grid", grid_spec["values"])
+                if "blocks_per_sm" in spec:
+                    blocks_per_sm_spec = spec["blocks_per_sm"]
+                    if blocks_per_sm_spec["type"] == "range":
+                        blocks_per_sm = trial.suggest_int(f"{param_name}_blocks_per_sm", blocks_per_sm_spec["min"], blocks_per_sm_spec["max"], step=blocks_per_sm_spec.get("step", 1))
+                    elif blocks_per_sm_spec["type"] == "values":
+                        blocks_per_sm = trial.suggest_categorical(f"{param_name}_blocks_per_sm", blocks_per_sm_spec["values"])
 
                 if "block_size" in spec:
                     block_spec = spec["block_size"]
                     if block_spec["type"] == "range":
-                        block_value = trial.suggest_int(f"{param_name}_block", block_spec["low"], block_spec["high"], step=block_spec.get("step", 1))
+                        block_value = trial.suggest_int(f"{param_name}_block", block_spec["min"] * backend.warpSize, block_spec["max_value"], step=block_spec.get("step", 1) * backend.warpSize)
                     elif block_spec["type"] == "values":
-                        block_value = trial.suggest_categorical(f"{param_name}_block", block_spec["values"])
+                        warp_values = [v for v in block_spec["values"] if v % backend.warpSize == 0]
+                        block_value = trial.suggest_categorical(f"{param_name}_block", warp_values)
 
                 kernels_param_space[param_name] = {}
-                if grid_value is not None:
-                    kernels_param_space[param_name]["grid_size"] = grid_value
+                if blocks_per_sm is not None:
+                    kernels_param_space[param_name]["blocks_per_sm"] = blocks_per_sm
                 if block_value is not None:
                     kernels_param_space[param_name]["block_size"] = block_value
         
         for param_name, spec in kernels_param_space.items():
-            if isinstance(spec, dict) and "grid_size" in spec and "block_size" in spec:
-                min_block_per_cu = spec["grid_size"] / backend.nSMs
+            if isinstance(spec, dict) and "blocks_per_sm" in spec and "block_size" in spec:
+                min_block_per_cu = spec["blocks_per_sm"]
                 max_threads = spec["block_size"]
                 #if min_block_per_cu * max_threads > 2048:
                 #if min_block_per_cu * max_threads > 1536:
@@ -61,8 +61,7 @@ def optimise(trial):
                     pass
                     #return float("inf")  # Penalize this configuration
 
-        #mean, std_dev = backend.get_step_mean_time("optimisation_step", kernels_param_space, dataset="47kHz", filename=os.path.join(TUNER_WORKDIR, "defaultParamsL40S.h"))
-        mean, _ = backend.get_step_mean_time_no_RTC("optimisation_step", kernels_param_space, arch="MI100", dataset="o2-pbpb-42kHz-32")
+        mean, std_dev = backend.get_step_mean_time("optimisation_step", kernels_param_space, dataset="47kHz", filename=os.path.join(TUNER_WORKDIR, "defaultParams.h"))
     finally:
         os.chdir(original_cwd)
     return mean

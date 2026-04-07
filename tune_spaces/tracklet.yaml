@@ -1,103 +1,103 @@
 TrackletConstructor:
   grid_size:
     type: range
-    low: 304
-    high: 3040
-    step: 304
+    min: 1
+    max: 10
+    step: 1
   block_size:
     type: range
-    low: 64
-    high: 1024
-    step: 64
+    min: 1
+    max_value: 1024
+    step: 1
 
 TrackletSelector:
   grid_size:
     type: range
-    low: 304
-    high: 3040
-    step: 304
+    min: 1
+    max: 10
+    step: 1
   block_size:
     type: range
-    low: 64
-    high: 1024
-    step: 64
+    min: 1
+    max_value: 1024
+    step: 1
 
 NeighboursCleaner:
   grid_size:
     type: range
-    low: 304
-    high: 3040
-    step: 304
+    min: 1
+    max: 10
+    step: 1
   block_size:
     type: range
-    low: 64
-    high: 1024
-    step: 64
+    min: 1
+    max_value: 1024
+    step: 1
 
 NeighboursFinder:
   grid_size:
     type: range
-    low: 304
-    high: 3040
-    step: 304
+    min: 1
+    max: 10
+    step: 1
   block_size:
     type: range
-    low: 64
-    high: 1024
-    step: 64
+    min: 1
+    max_value: 1024
+    step: 1
 
 StartHitsSorter:
   grid_size:
     type: range
-    low: 304
-    high: 3040
-    step: 304
+    min: 1
+    max: 10
+    step: 1
   block_size:
     type: range
-    low: 64
-    high: 1024
-    step: 64
+    min: 1
+    max_value: 1024
+    step: 1
 
 CreateTrackingData:
   grid_size:
     type: range
-    low: 304
-    high: 3040
-    step: 304
+    min: 1
+    max: 10
+    step: 1
   block_size:
     type: range
-    low: 64
-    high: 1024
-    step: 64
+    min: 1
+    max_value: 1024
+    step: 1
 
 StartHitsFinder:
   grid_size:
     type: range
-    low: 304
-    high: 3040
-    step: 304
+    min: 1
+    max: 10
+    step: 1
   block_size:
     type: range
-    low: 64
-    high: 1024
-    step: 64
+    min: 1
+    max_value: 1024
+    step: 1
 
 ExtrapolationTracking:
   grid_size:
     type: range
-    low: 304
-    high: 3040
-    step: 304
+    min: 1
+    max: 10
+    step: 1
   block_size:
     type: range
-    low: 64
-    high: 1024
-    step: 64
+    min: 1
+    max_value: 1024
+    step: 32
 
 PAR_NEIGHBOURS_FINDER_MAX_NNEIGHUP:
   type: range
-  low: 0
-  high: 15
+  min: 0
+  max: 15
 
 PAR_NEIGHBOURS_FINDER_UNROLL_GLOBAL:
   type: values
@@ -109,8 +109,8 @@ PAR_NEIGHBOURS_FINDER_UNROLL_SHARED:
 
 PAR_TRACKLET_SELECTOR_HITS_REG_SIZE:
   type: range
-  low: 0
-  high: 40
+  min: 0
+  max: 40
 
 PAR_SORT_STARTHITS:
   type: values
