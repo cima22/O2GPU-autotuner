@@ -9,6 +9,7 @@ TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__
 TUNE_SPACE_NAME = os.getenv("TUNE_SPACE_NAME")
 TUNER_DATASET = os.getenv("TUNER_DATASET", "o2-pbpb-47kHz-32")
 TUNER_PARAMETER_FILE = os.getenv("TUNER_PARAMETER_FILE", os.path.join(TUNER_WORKDIR, "defaultParams.h"))
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", os.path.join(os.path.dirname(__file__), "tuning_results"))
 
 with open(TUNE_SPACE_PATH, "r") as f:
     tune_config = yaml.safe_load(f)
@@ -19,7 +20,7 @@ def optimise(trial):
     original_cwd = os.getcwd()
     try:
         os.chdir(TUNER_WORKDIR)
-        backend = BenchmarkBackend(os.path.join(original_cwd, "o2tuner"))
+        backend = BenchmarkBackend(OUTPUT_DIR)
         kernels_param_space = {}
 
         for param_name, spec in tune_config.items():
