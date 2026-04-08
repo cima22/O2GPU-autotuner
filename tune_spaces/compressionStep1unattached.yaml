@@ -1,5 +1,5 @@
 CompressionKernels_step1unattached:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10

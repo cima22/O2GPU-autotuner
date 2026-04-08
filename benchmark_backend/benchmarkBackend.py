@@ -166,7 +166,7 @@ class BenchmarkBackend:
             rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
         command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--preloadEvents"]
-        if self.num_events > 1:
+        if self.num_events and self.num_events > 1:
             command += ["-n", str(self.num_events)]
         else:
             command += ["--runs", str(self.num_runs)]
@@ -177,7 +177,7 @@ class BenchmarkBackend:
             try:
                 if RTC and self.backend == "nvidia":
                     subprocess.run(rtc_dump, stdout=f, stderr=f, timeout=timeout, check=True)
-                timeout = 60 * self.num_events if self.num_events > 1 else 60 * self.num_runs # stall timeout check
+                timeout = 60 * self.num_events if self.num_events and self.num_events > 1 else 60 * self.num_runs # stall timeout check
                 subprocess.run(command, stdout=f, stderr=f, timeout=timeout, check=True)
             except subprocess.TimeoutExpired:
                 f.write("ERROR: Benchmark stalled and timed out.\n")

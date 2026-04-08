@@ -1,5 +1,5 @@
 CFClusterizer:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
@@ -10,73 +10,73 @@ CFClusterizer:
     max_value: 1024
     step: 1
 CFDecodeZSDenseLink:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFNoiseSuppression_noiseSuppression:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFDeconvolution:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFPeakFinder:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFCheckPadBaseline:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFStreamCompaction_compactDigits:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFNoiseSuppression_updatePeaks:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFStreamCompaction_scanStart:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFGather:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFStreamCompaction_scanUp:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFStreamCompaction_scanTop:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
     step: 1
 CFStreamCompaction_scanDown:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10

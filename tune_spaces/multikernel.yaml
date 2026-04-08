@@ -1,5 +1,5 @@
 CompressionKernels_step0attached:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
@@ -9,7 +9,7 @@ CompressionKernels_step0attached:
     values: [32, 64, 96, 128, 160, 192]
 
 GMMergerFollowLoopers:
-  grid_size:
+  blocks_per_sm:
     type: range
     min: 1
     max: 10
