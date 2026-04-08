@@ -36,7 +36,7 @@ trials_map["clusterizer"]="4 2"
 trials_map["compressionStep1unattached"]="4 2"
 trials_map["tracklet"]="4 2"
 
-: "${TUNE_SPACE_DIR:=tune_spaces}"
+: "${TUNE_SPACE_DIR:=$SCRIPT_DIR/tune_spaces}"
 
 for yaml_file in "${!trials_map[@]}"; do
   IFS=' ' read -r trials startup <<< "${trials_map[$yaml_file]}"
