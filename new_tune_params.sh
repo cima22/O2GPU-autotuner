@@ -5,7 +5,7 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
-EXPORT OUTPUT_DIR="$(realpath "$1")"
+export OUTPUT_DIR="$(realpath "$1")"
 DATASET_ARG="$2"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
