@@ -92,7 +92,7 @@ ExtrapolationTracking:
     type: range
     min: 1
     max_value: 1024
-    step: 32
+    step: 1
 
 PAR_NEIGHBOURS_FINDER_MAX_NNEIGHUP:
   type: range
