@@ -5,6 +5,7 @@ import os
 import sys
 import yaml
 import optuna
+import time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
@@ -165,6 +166,56 @@ def run_backend_once(all_kernel_params, backend, step, output_dir, kernels):
             print(f"[WARNING] Could not remove run log: {e}")
 
 # =========================
+# TIME-BASED ITERATION CALC
+# =========================
+
+def parse_time_budget(time_str):
+    """
+    Parse a time string:
+        - integer + m/h → minutes or hours
+        - hh:mm → hours:minutes
+    Returns: total seconds
+    """
+    import re
+
+    time_str = time_str.strip().lower()
+    if re.match(r"^\d+$", time_str):
+        return int(time_str) * 60
+    elif time_str.endswith("m"):
+        return int(time_str[:-1]) * 60
+    elif time_str.endswith("h"):
+        return int(time_str[:-1]) * 3600
+    elif re.match(r"^\d+:\d+$", time_str):
+        h, m = map(int, time_str.split(":"))
+        return h * 3600 + m * 60
+    else:
+        raise ValueError(f"Invalid time format: {time_str}")
+
+
+def estimate_iterations(backend, time_budget_sec):
+    """
+    Do a single run to estimate mean time per iteration.
+    Pass an empty config to backend.
+    Returns: n_trials, n_startup_trials
+    """
+    print("[INFO] Running empty iteration to estimate timing...")
+    import time
+
+    t0 = time.time()
+    backend.update_param_file({}, TUNER_PARAMETER_FILE)  # empty dictionary
+    backend.profile_benchmark(TUNER_DATASET)
+    t1 = time.time()
+
+    iter_time = t1 - t0
+    print(f"[INFO] Estimated iteration time: {iter_time:.2f}s")
+
+    n_trials = max(1, int(time_budget_sec / iter_time))
+    n_startup = max(1, int(0.15 * n_trials))
+    print(f"[INFO] Total trials: {n_trials}, startup trials: {n_startup}")
+
+    return n_trials, n_startup
+
+# =========================
 # MAIN
 # =========================
 def main():
@@ -172,6 +223,7 @@ def main():
     parser.add_argument("--output", default=OUTPUT_DIR_ENV)
     parser.add_argument("--trials", type=int, required=True)
     parser.add_argument("--startup", type=int, required=True)
+    parser.add_argument("--time_budget", default="30m", help="Time budget for tuning: minutes (30m), hours (1h), or hh:mm (1:30)")
     args = parser.parse_args()
 
     output_dir = os.path.realpath(args.output)
@@ -187,11 +239,14 @@ def main():
     print("Discovered kernels:")
     for k in kernels:
         print(f"  - {k}")
+    time_budget_sec = parse_time_budget(args.time_budget)
+    trials, startup = estimate_iterations(backend, kernels, spaces, TUNER_DATASET, TUNER_PARAMETER_FILE, time_budget_sec)
 
+    print(f"[INFO] Running {trials} trials with {startup} startup trials.")
     studies = {k: optuna.create_study(
         study_name=k,
         direction="minimize",
-        sampler=make_sampler(args.startup),
+        sampler=make_sampler(startup),
         storage=f"sqlite:///{output_dir}/{k}.db",
         load_if_exists=True
     ) for k in kernels}
@@ -199,7 +254,7 @@ def main():
     # =========================
     # OPT LOOP
     # =========================
-    for step in range(args.trials):
+    for step in range(trials):
         print(f"\n========== STEP {step} ==========")
         trials = {k: studies[k].ask() for k in kernels}
         all_params = {}
