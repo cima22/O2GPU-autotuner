@@ -23,6 +23,7 @@ class BenchmarkBackend:
         self.dataset = None
         self.param_dump = "parameters.out"
         self.debug = debug
+        self.vRAM = 15000000000
         self.backend = backend if backend != "auto" else BenchmarkBackend._detect_GPUs_vendor(self.debug)
         if self.backend not in ["amd", "nvidia"]:
             print("Warning: Unsupported or unknown GPU backend detected")
@@ -33,7 +34,7 @@ class BenchmarkBackend:
             self.gpu_lang = "HIP"
             self.warpSize = BenchmarkBackend._AMD_get_warp_size()
             self.nSMs = BenchmarkBackend._AMD_get_number_of_compute_units()
-            self.maxThreadsPerMultiProcessor = BenchmarkBackend._AMD_get_max_threads_per_multi_processor()
+            self.maxThreadsPerMultiProcessor = BenchmarkBackend._AMD_get_max_threads_per_cu()
             self._get_df_from_raw = self._AMD_get_df_from_raw
         if self.backend == "nvidia":
             self.profiler = "nsys"
@@ -41,7 +42,7 @@ class BenchmarkBackend:
             self.gpu_lang = "CUDA"
             self.warpSize = BenchmarkBackend._NVIDIA_get_warp_size()
             self.nSMs = BenchmarkBackend._NVIDIA_get_number_of_streaming_multiprocessors()
-            self.maxThreadsPerMultiProcessor = BenchmarkBackend._NVIDIA_get_max_threads_per_multi_processor()
+            self.maxThreadsPerMultiProcessor = BenchmarkBackend._NVIDIA_get_max_threads_per_sm()
             self._get_df_from_raw = self._NVIDIA_get_df_from_raw
         try:
             BenchmarkBackend._detect_profiler(self.profiler)
@@ -119,7 +120,7 @@ class BenchmarkBackend:
         return nCU
 
     @staticmethod
-    def _AMD_get_max_threads_per_multi_processor():
+    def _AMD_get_max_threads_per_cu():
         cmd = "echo '#include <hip/hip_runtime.h>\n#include <stdio.h>\nint main(){hipDeviceProp_t p;hipGetDeviceProperties(&p,0);printf(\"%d\\n\",p.maxThreadsPerMultiProcessor);return 0;}' > /tmp/maxThreads.cpp && hipcc /tmp/maxThreads.cpp -o /tmp/maxThreads && /tmp/maxThreads"
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
@@ -163,9 +164,9 @@ class BenchmarkBackend:
         self.dataset = dataset or self.dataset
         self.param_dump = dump or self.param_dump
         if RTC and self.backend == "nvidia":
-            rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+            rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
-        command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000", "--preloadEvents"]
+        command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--preloadEvents"]
         if self.num_events and self.num_events > 1:
             command += ["-n", str(self.num_events)]
         else:
@@ -199,7 +200,8 @@ class BenchmarkBackend:
             json_file = os.path.join(self.output_folder, "times_raw.json")
             if os.path.isfile(report_file):
                 command = f"nsys export --type json --output {json_file} --separate-strings 1 --include-json 1 -f 1 {report_file}"
-                subprocess.run(command, shell=True, cwd=self.output_folder)
+                with open(self.benchmark_backend_log, 'a') as f:
+                    subprocess.run(command, shell=True, cwd=self.output_folder, stdout=f, stderr=f)
 
     def update_param_file(self, kernels_config, filename, dump_path=None, log_file=None):
         base_dir = os.path.dirname(os.path.abspath(filename))
@@ -332,7 +334,7 @@ class BenchmarkBackend:
         self.views = views
         return views
 
-    def _compute_kernel_mean_time(self, kernel_name, block_size, grid_size, dataset=None, write_to_csv=True):
+    def compute_kernel_mean_time(self, kernel_name, block_size, grid_size, dataset=None, write_to_csv=True):
         dataset = dataset or self.dataset
         kernel_stats = self._get_df_from_raw()
         filtered = kernel_stats[kernel_stats["Kernel_Name"].str.contains(kernel_name)]
@@ -347,7 +349,7 @@ class BenchmarkBackend:
             BenchmarkBackend._write_stats_to_csv(output_file, ["block_size", "grid_size", "dataset", "mean", "std_dev"], row)
         return (mean, std_dev)
 
-    def _compute_step_mean_time(self, step_name, kernels_config, dataset=None, write_to_csv=True):
+    def compute_step_mean_time(self, step_name, kernels_config, dataset=None, write_to_csv=True):
         dataset = dataset or self.dataset
         subviews = []
         durations = []
@@ -379,7 +381,7 @@ class BenchmarkBackend:
         except (TimeoutError, RuntimeError) as e:
             print(f"Error during benchmark: {e}")
             return (float('inf'), 0.0)
-        return self._compute_kernel_mean_time(kernel_name, block_size, grid_size, dataset)
+        return self.compute_kernel_mean_time(kernel_name, block_size, grid_size, dataset)
 
     def get_step_mean_time(self, step_name, kernels_config, dataset=None, filename="defaultParams.h"):
         self.update_param_file(kernels_config, filename, log_file=self.benchmark_backend_log)
@@ -389,13 +391,13 @@ class BenchmarkBackend:
         except (TimeoutError, RuntimeError) as e:
             print(f"Error during step benchmark: {e}")
             return (float('inf'), 0.0)
-        return self._compute_step_mean_time(step_name, kernels_config, dataset)
+        return self.compute_step_mean_time(step_name, kernels_config, dataset)
 
     def get_sync_mean_time(self, dump=None, dataset=None):
         dataset = dataset or self.dataset
         command = [
             "./ca", "-e", dataset,
-            "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", "15000000000",
+            "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM),
             "--preloadEvents", "--runs", str(self.num_runs),
             "--RTCenable", "1"]
         if dump:
@@ -435,4 +437,4 @@ class BenchmarkBackend:
         except (TimeoutError, RuntimeError) as e:
             print(f"Error during step benchmark: {e}")
             return (float('inf'), 0.0)
-        return self._compute_step_mean_time(step_name, kernels_config, dataset)
+        return self.compute_step_mean_time(step_name, kernels_config, dataset)

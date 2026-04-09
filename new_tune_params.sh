@@ -44,7 +44,7 @@ for yaml_file in "${!trials_map[@]}"; do
   export TUNE_SPACE_PATH="${TUNE_SPACE_DIR}/${yaml_file}.yaml"
   export TUNE_SPACE_NAME="$yaml_file"
 
-  python run_optuna.py \
+  python $SCRIPT_DIR/run_optuna.py \
     --output "$OUTPUT_DIR/${yaml_file}_tuning" \
     --trials "$trials" \
     --startup "$startup"
