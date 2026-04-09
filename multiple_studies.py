@@ -135,39 +135,101 @@ def is_invalid_config(kernels_param_space, backend, kernel_name):
 # BACKEND (YOU IMPLEMENT)
 # =========================
 
-def run_backend_once(all_kernel_params, backend):
+def run_backend_once(all_kernel_params, backend, step, output_dir, kernels):
     """
-    all_kernel_params:
-    {
-        "kernelA": {...},
-        "kernelB": {...}
-    }
-
-    You must:
-    - write params to config/header
-    - run application ONCE
-    - extract per-kernel timings
-
-    Return:
-    {
-        "kernelA": float,
-        "kernelB": float,
-    }
+    Returns:
+        dict: {kernel_name: timing or inf}
     """
 
-    # TODO: implement real execution
     print("\n[DEBUG] Running backend once with:")
     for k, v in all_kernel_params.items():
         print(f"{k}: {v}")
+
     merged = flatten_params(all_kernel_params)
+    run_log = os.path.join(output_dir, f"run_{step}.log")
+
+    timings = {}
+
     try:
-        backend.update_param_file(merged, TUNER_PARAMETER_FILE)
-        backend.profile_benchmark(TUNER_DATASET)
-        success = True
-    except Exception as e:
-        print(f"[ERROR] Backend failed: {e}")
-        success = False
-    return success
+        try:
+            backend.update_param_file(
+                merged,
+                TUNER_PARAMETER_FILE,
+                log_file=run_log
+            )
+
+            backend.profile_benchmark(
+                TUNER_DATASET,
+                run_log_file=run_log
+            )
+
+            success = True
+
+        except Exception as e:
+            print(f"[ERROR] Backend failed: {e}")
+            success = False
+
+        # ✅ SUCCESS PATH
+        if success:
+            for k in kernels:
+                mean, _ = backend.compute_step_mean_time(
+                    k, all_kernel_params[k], TUNER_DATASET
+                )
+                timings[k] = mean
+            return timings
+
+        # ❌ FAILURE PATH
+        print("[INFO] Parsing log for failing kernels")
+        bad_kernels = backend.detectFailingKernels(run_log, kernels)
+
+        if not bad_kernels:
+            print("[WARNING] No kernel identified → fallback: mark all as bad")
+            return {k: float("inf") for k in kernels}
+
+        print(f"[INFO] Detected failing kernels: {bad_kernels}")
+
+        for k in bad_kernels:
+            timings[k] = float("inf")
+
+        good_kernels = [k for k in kernels if k not in bad_kernels]
+
+        if good_kernels:
+            print(f"[INFO] Retrying without bad kernels: {good_kernels}")
+
+            subset = {k: all_kernel_params[k] for k in good_kernels}
+
+            try:
+                backend.update_param_file(
+                    flatten_params(subset),
+                    TUNER_PARAMETER_FILE,
+                    log_file=run_log
+                )
+
+                backend.profile_benchmark(
+                    TUNER_DATASET,
+                    run_log_file=run_log
+                )
+
+                for k in good_kernels:
+                    mean, _ = backend.compute_step_mean_time(
+                        k, all_kernel_params[k], TUNER_DATASET
+                    )
+                    timings[k] = mean
+
+            except Exception:
+                print("[WARNING] Retry failed → marking remaining as bad")
+                for k in good_kernels:
+                    timings[k] = float("inf")
+
+        return timings
+
+    # 💥 ALWAYS EXECUTED
+    finally:
+        try:
+            if os.path.exists(run_log):
+                os.remove(run_log)
+        except Exception as e:
+            print(f"[WARNING] Failed to delete log file: {e}")
 
 # =========================
 # MAIN
@@ -236,16 +298,15 @@ def main():
             all_params[k] = params
 
         # 🚀 RUN ONCE
-        outcome = run_backend_once(all_params, backend)
+        timings = run_backend_once(all_params, backend, step, output_dir, kernels)
 
-        # Tell Optuna
-        for k in kernels:
-            if not valid[k]:
-                studies[k].tell(trials[k], float("inf"))
-            else:
-                mean, _ = backend.compute_step_mean_time(k, all_params[k], TUNER_DATASET)
-                studies[k].tell(trials[k], mean)
-                print(f"{k}: {mean:.6f}")
+    for k in kernels:
+        if not valid[k]:
+            studies[k].tell(trials[k], float("inf"))
+        else:
+            value = timings.get(k, float("inf"))
+            studies[k].tell(trials[k], value)
+            print(f"{k}: {value:.6f}")
 
     print("\n========== DONE ==========")
 

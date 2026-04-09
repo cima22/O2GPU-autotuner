@@ -36,6 +36,7 @@ class BenchmarkBackend:
             self.nSMs = BenchmarkBackend._AMD_get_number_of_compute_units()
             self.maxThreadsPerMultiProcessor = BenchmarkBackend._AMD_get_max_threads_per_cu()
             self._get_df_from_raw = self._AMD_get_df_from_raw
+            self.detectFailingKernels = self._AMD_detectFailingKernels
         if self.backend == "nvidia":
             self.profiler = "nsys"
             self.profiler_options = ["profile", "-o", f"{os.path.join(self.output_folder, 'report.nsys-rep')}", "--force-overwrite", "true"]
@@ -44,6 +45,7 @@ class BenchmarkBackend:
             self.nSMs = BenchmarkBackend._NVIDIA_get_number_of_streaming_multiprocessors()
             self.maxThreadsPerMultiProcessor = BenchmarkBackend._NVIDIA_get_max_threads_per_sm()
             self._get_df_from_raw = self._NVIDIA_get_df_from_raw
+            self.detectFailingKernels = self._NVIDIA_detectFailingKernels
         try:
             BenchmarkBackend._detect_profiler(self.profiler)
         except FileNotFoundError as e:
@@ -154,13 +156,109 @@ class BenchmarkBackend:
         return max_threads
 
     @staticmethod
+    def _NVIDIA_detectFailingKernels(log_file, kernels):
+        """
+        Parse NVIDIA ptxas log and return failing kernels.
+
+        Parameters
+        ----------
+        log_file : str
+        kernels : list[str]
+            List of kernel names used in tuning (e.g. "tracklet")
+
+        Returns
+        -------
+        set[str]
+            Set of failing kernel names
+        """
+
+        failing_kernels = set()
+
+        if not os.path.exists(log_file):
+            return failing_kernels
+
+        with open(log_file, "r") as f:
+            content = f.read()
+
+        # 🚨 Only act if there is a real error
+        if "ptxas error" not in content:
+            return failing_kernels
+
+        # Extract kernel names from error lines
+        matches = re.findall(
+            r"ptxas error.*Entry function 'krnl_(GPUTPC\w+)'",
+            content
+        )
+
+        for match in matches:
+            # match example: GPUTPCTrackletSelector
+
+            for k in kernels:
+                if k.lower() in match.lower():
+                    failing_kernels.add(k)
+
+        return failing_kernels
+
+
+    @staticmethod
     def _detect_profiler(profiler):
         try:
             subprocess.run([profiler, "--version"], capture_output=True, text=True, check=True)
         except subprocess.CalledProcessError as e:
             raise FileNotFoundError(f"{profiler} not found or not working properly.") from e
-        
-    def profile_benchmark(self, dataset=None, dump=None, RTC=True):
+            
+    import subprocess
+
+    @staticmethod
+    def _run_and_log(cmd, global_log_path, run_log_path=None, timeout=None):
+        """
+        Run a command and write output to:
+        - global log (append)
+        - optional per-run log (overwrite)
+
+        Returns:
+            stdout (str)
+        """
+
+        with open(global_log_path, "a") as global_f:
+            run_f = open(run_log_path, "w") if run_log_path else None
+
+            try:
+                result = subprocess.run(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    timeout=timeout,
+                    check=True,
+                    text=True
+                )
+
+                # Write output
+                global_f.write(result.stdout)
+                if run_f:
+                    run_f.write(result.stdout)
+
+                return result.stdout
+
+            except subprocess.TimeoutExpired as e:
+                msg = "ERROR: Benchmark stalled and timed out.\n"
+                global_f.write(msg)
+                if run_f:
+                    run_f.write(msg)
+                raise TimeoutError("Benchmark timed out")
+
+            except subprocess.CalledProcessError as e:
+                msg = f"ERROR: Benchmark crashed. Return code: {e.returncode}\n"
+                global_f.write(msg)
+                if run_f:
+                    run_f.write(msg)
+                raise RuntimeError(f"Benchmark crashed with return code {e.returncode}")
+
+            finally:
+                if run_f:
+                    run_f.close()
+
+    def profile_benchmark(self, dataset=None, dump=None, RTC=True, run_log_file=None):
         self.dataset = dataset or self.dataset
         self.param_dump = dump or self.param_dump
         if RTC and self.backend == "nvidia":
@@ -173,19 +271,10 @@ class BenchmarkBackend:
             command += ["--runs", str(self.num_runs)]
         if RTC:
             command += ["--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
-        timeout = 90
-        with open(self.benchmark_backend_log, 'a') as f:
-            try:
-                if RTC and self.backend == "nvidia":
-                    subprocess.run(rtc_dump, stdout=f, stderr=f, timeout=timeout, check=True)
-                timeout = 60 * self.num_events if self.num_events and self.num_events > 1 else 60 * self.num_runs # stall timeout check
-                subprocess.run(command, stdout=f, stderr=f, timeout=timeout, check=True)
-            except subprocess.TimeoutExpired:
-                f.write("ERROR: Benchmark stalled and timed out.\n")
-                raise TimeoutError("Benchmark timed out")
-            except subprocess.CalledProcessError as e:
-                f.write(f"ERROR: Benchmark crashed. Return code: {e.returncode}\n")
-                raise RuntimeError(f"Benchmark crashed with return code {e.returncode}")
+        if RTC and self.backend == "nvidia":
+            self._run_and_log(rtc_dump, self.benchmark_backend_log, run_log_file, timeout=90)
+        timeout = 60 * self.num_events if self.num_events and self.num_events > 1 else 60 * self.num_runs # stall timeout check
+        self._run_and_log(command, self.benchmark_backend_log, run_log_file, timeout=timeout)
         self._postprocess_profiler_output()
 
     def _postprocess_profiler_output(self):
