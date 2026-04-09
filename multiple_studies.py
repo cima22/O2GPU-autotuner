@@ -7,27 +7,20 @@ import yaml
 import optuna
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
 
 # =========================
 # ENV CONFIG
 # =========================
-
 TUNE_SPACE_DIR = os.getenv("TUNE_SPACE_DIR", os.path.join(os.path.dirname(__file__), "tune_spaces"))
-
 TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../standalone"))
-
 TUNER_DATASET = os.getenv("TUNER_DATASET", "o2-pbpb-47kHz-32")
-
 TUNER_PARAMETER_FILE = os.getenv("TUNER_PARAMETER_FILE", os.path.join(TUNER_WORKDIR, "defaultParams.h"))
-
 OUTPUT_DIR_ENV = os.getenv("OUTPUT_DIR", os.path.join(os.path.dirname(__file__), "tuning_results"))
 
 # =========================
 # HELPERS
 # =========================
-
 def discover_kernels(tune_space_dir):
     kernels = []
     for f in os.listdir(tune_space_dir):
@@ -35,7 +28,6 @@ def discover_kernels(tune_space_dir):
             kernels.append(os.path.splitext(f)[0])
     kernels.sort()
     return kernels
-
 
 def load_spaces(tune_space_dir, kernels):
     spaces = {}
@@ -58,183 +50,123 @@ def make_sampler(startup):
         multivariate=True
     )
 
-
 # =========================
-# PARAM BUILDING (your logic)
+# PARAM BUILDING
 # =========================
-
 def build_kernel_params(trial, tune_config, backend, kernel_name):
     kernels_param_space = {}
-
     for param_name, spec in tune_config.items():
         full_name = f"{kernel_name}_{param_name}"
-
         if param_name.startswith("PAR_"):
             if spec["type"] == "range":
-                kernels_param_space[param_name] = trial.suggest_int(
-                    full_name, spec["min"], spec["max"]
-                )
+                kernels_param_space[param_name] = trial.suggest_int(full_name, spec["min"], spec["max"])
             elif spec["type"] == "values":
-                kernels_param_space[param_name] = trial.suggest_categorical(
-                    full_name, spec["values"]
-                )
+                kernels_param_space[param_name] = trial.suggest_categorical(full_name, spec["values"])
         else:
             blocks_per_sm = None
             block_value = None
-
             if "blocks_per_sm" in spec:
                 s = spec["blocks_per_sm"]
                 name = f"{full_name}_blocks_per_sm"
-
                 if s["type"] == "range":
-                    blocks_per_sm = trial.suggest_int(
-                        name, s["min"], s["max"], step=s.get("step", 1)
-                    )
+                    blocks_per_sm = trial.suggest_int(name, s["min"], s["max"], step=s.get("step", 1))
                 elif s["type"] == "values":
-                    blocks_per_sm = trial.suggest_categorical(
-                        name, s["values"]
-                    )
-
+                    blocks_per_sm = trial.suggest_categorical(name, s["values"])
             if "block_size" in spec:
                 s = spec["block_size"]
                 name = f"{full_name}_block_size"
-
                 if s["type"] == "range":
                     block_value = trial.suggest_int(
-                        name,
-                        s["min"] * backend.warpSize,
-                        s["max_value"],
-                        step=s.get("step", 1) * backend.warpSize
+                        name, s["min"] * backend.warpSize, s["max_value"], step=s.get("step", 1) * backend.warpSize
                     )
                 elif s["type"] == "values":
                     warp_values = [v for v in s["values"] if v % backend.warpSize == 0]
                     block_value = trial.suggest_categorical(name, warp_values)
-
             kernels_param_space[param_name] = {}
             if blocks_per_sm is not None:
                 kernels_param_space[param_name]["blocks_per_sm"] = blocks_per_sm
             if block_value is not None:
                 kernels_param_space[param_name]["block_size"] = block_value
-
     return kernels_param_space
-
 
 def is_invalid_config(kernels_param_space, backend, kernel_name):
     for param_name, spec in kernels_param_space.items():
         if isinstance(spec, dict) and "blocks_per_sm" in spec and "block_size" in spec:
-            if (
-                spec["blocks_per_sm"] * spec["block_size"]
-                > backend.maxThreadsPerMultiProcessor
-                and kernel_name != "tracklet"
-            ):
+            if spec["blocks_per_sm"] * spec["block_size"] > backend.maxThreadsPerMultiProcessor and kernel_name != "tracklet":
                 return True
     return False
 
-
 # =========================
-# BACKEND (YOU IMPLEMENT)
+# BACKEND EXECUTION
 # =========================
-
 def run_backend_once(all_kernel_params, backend, step, output_dir, kernels):
     """
-    Returns:
-        dict: {kernel_name: timing or inf}
+    Execute backend once with all kernel params.
+    Returns: dict {kernel_name: mean_time or inf}
     """
-
     print("\n[DEBUG] Running backend once with:")
     for k, v in all_kernel_params.items():
         print(f"{k}: {v}")
 
     merged = flatten_params(all_kernel_params)
     run_log = os.path.join(output_dir, f"run_{step}.log")
-
     timings = {}
 
     try:
+        # Run benchmark
         try:
-            backend.update_param_file(
-                merged,
-                TUNER_PARAMETER_FILE,
-                log_file=run_log
-            )
-
-            backend.profile_benchmark(
-                TUNER_DATASET,
-                run_log_file=run_log
-            )
-
+            backend.update_param_file(merged, TUNER_PARAMETER_FILE, log_file=run_log)
+            backend.profile_benchmark(TUNER_DATASET, run_log_file=run_log)
             success = True
-
-        except Exception as e:
-            print(f"[ERROR] Backend failed: {e}")
+        except (RuntimeError, TimeoutError) as e:
+            print(f"[INFO] Backend failed: {e}")
             success = False
 
-        # ✅ SUCCESS PATH
+        # SUCCESS
         if success:
             for k in kernels:
-                mean, _ = backend.compute_step_mean_time(
-                    k, all_kernel_params[k], TUNER_DATASET
-                )
+                mean, _ = backend.compute_step_mean_time(k, all_kernel_params[k], TUNER_DATASET)
                 timings[k] = mean
             return timings
 
-        # ❌ FAILURE PATH
+        # FAILURE → parse log
         print("[INFO] Parsing log for failing kernels")
         bad_kernels = backend.detectFailingKernels(run_log, kernels)
-
         if not bad_kernels:
-            print("[WARNING] No kernel identified → fallback: mark all as bad")
+            print("[WARNING] No kernel identified → mark all as bad")
             return {k: float("inf") for k in kernels}
-
         print(f"[INFO] Detected failing kernels: {bad_kernels}")
 
         for k in bad_kernels:
             timings[k] = float("inf")
-
         good_kernels = [k for k in kernels if k not in bad_kernels]
 
+        # Retry good kernels
         if good_kernels:
             print(f"[INFO] Retrying without bad kernels: {good_kernels}")
-
             subset = {k: all_kernel_params[k] for k in good_kernels}
-
             try:
-                backend.update_param_file(
-                    flatten_params(subset),
-                    TUNER_PARAMETER_FILE,
-                    log_file=run_log
-                )
-
-                backend.profile_benchmark(
-                    TUNER_DATASET,
-                    run_log_file=run_log
-                )
-
+                backend.update_param_file(flatten_params(subset), TUNER_PARAMETER_FILE, log_file=run_log)
+                backend.profile_benchmark(TUNER_DATASET, run_log_file=run_log)
                 for k in good_kernels:
-                    mean, _ = backend.compute_step_mean_time(
-                        k, all_kernel_params[k], TUNER_DATASET
-                    )
+                    mean, _ = backend.compute_step_mean_time(k, all_kernel_params[k], TUNER_DATASET)
                     timings[k] = mean
-
-            except Exception:
-                print("[WARNING] Retry failed → marking remaining as bad")
+            except (RuntimeError, TimeoutError) as e:
+                print(f"[WARNING] Retry failed: {e}")
                 for k in good_kernels:
                     timings[k] = float("inf")
-
         return timings
-
-    # 💥 ALWAYS EXECUTED
     finally:
+        # Always clean the single-run log
         try:
             if os.path.exists(run_log):
                 os.remove(run_log)
         except Exception as e:
-            print(f"[WARNING] Failed to delete log file: {e}")
+            print(f"[WARNING] Could not remove run log: {e}")
 
 # =========================
 # MAIN
 # =========================
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default=OUTPUT_DIR_ENV)
@@ -249,8 +181,6 @@ def main():
     os.chdir(TUNER_WORKDIR)
 
     backend = BenchmarkBackend(output_dir)
-
-    # Discover + load
     kernels = discover_kernels(TUNE_SPACE_DIR)
     spaces = load_spaces(TUNE_SPACE_DIR, kernels)
 
@@ -258,59 +188,44 @@ def main():
     for k in kernels:
         print(f"  - {k}")
 
-    # Create studies
-    studies = {
-        k: optuna.create_study(
-            study_name=k,
-            direction="minimize",
-            sampler=make_sampler(args.startup),
-            storage=f"sqlite:///{output_dir}/{k}.db",
-            load_if_exists=True,
-        )
-        for k in kernels
-    }
+    studies = {k: optuna.create_study(
+        study_name=k,
+        direction="minimize",
+        sampler=make_sampler(args.startup),
+        storage=f"sqlite:///{output_dir}/{k}.db",
+        load_if_exists=True
+    ) for k in kernels}
 
     # =========================
     # OPT LOOP
     # =========================
-
     for step in range(args.trials):
         print(f"\n========== STEP {step} ==========")
-
         trials = {k: studies[k].ask() for k in kernels}
         all_params = {}
         valid = {}
 
-        # Build params
+        # Build trial params
         for k in kernels:
-            params = build_kernel_params(
-                trials[k],
-                spaces[k],
-                backend,
-                k
-            )
-
-            if is_invalid_config(params, backend, k):
-                valid[k] = False
-            else:
-                valid[k] = True
-
+            params = build_kernel_params(trials[k], spaces[k], backend, k)
+            valid[k] = not is_invalid_config(params, backend, k)
             all_params[k] = params
 
-        # 🚀 RUN ONCE
+        # Run backend ONCE
         timings = run_backend_once(all_params, backend, step, output_dir, kernels)
 
-    for k in kernels:
-        if not valid[k]:
-            studies[k].tell(trials[k], float("inf"))
-        else:
-            value = timings.get(k, float("inf"))
-            studies[k].tell(trials[k], value)
-            print(f"{k}: {value:.6f}")
+        # Tell Optuna
+        for k in kernels:
+            if not valid[k]:
+                studies[k].tell(trials[k], float("inf"))
+                print(f"{k}: invalid configuration → inf")
+            else:
+                value = timings.get(k, float("inf"))
+                studies[k].tell(trials[k], value)
+                print(f"{k}: {value:.6f}")
 
+    # Print best results
     print("\n========== DONE ==========")
-
-    # Print best
     for k in kernels:
         print(f"\nBest for {k}:")
         print(studies[k].best_trial)

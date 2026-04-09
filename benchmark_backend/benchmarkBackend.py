@@ -206,58 +206,45 @@ class BenchmarkBackend:
             subprocess.run([profiler, "--version"], capture_output=True, text=True, check=True)
         except subprocess.CalledProcessError as e:
             raise FileNotFoundError(f"{profiler} not found or not working properly.") from e
-            
-    import subprocess
-
+	
     @staticmethod
     def _run_and_log(cmd, global_log_path, run_log_path=None, timeout=None):
         """
         Run a command and write output to:
         - global log (append)
         - optional per-run log (overwrite)
-
-        Returns:
-            stdout (str)
+    
+     Returns:
+            returncode: int
         """
 
-        with open(global_log_path, "a") as global_f:
-            run_f = open(run_log_path, "w") if run_log_path else None
-
+        run_fpath = run_log_path or "tmp_run.log"
+        # Run command, output directly to run log
+        with open(run_fpath, "w") as run_f:
             try:
                 result = subprocess.run(
                     cmd,
-                    stdout=subprocess.PIPE,
+                    stdout=run_f,
                     stderr=subprocess.STDOUT,
                     timeout=timeout,
                     check=True,
                     text=True
                 )
+                returncode = result.returncode
 
-                # Write output
-                global_f.write(result.stdout)
-                if run_f:
-                    run_f.write(result.stdout)
-
-                return result.stdout
-
-            except subprocess.TimeoutExpired as e:
-                msg = "ERROR: Benchmark stalled and timed out.\n"
-                global_f.write(msg)
-                if run_f:
-                    run_f.write(msg)
+            except subprocess.TimeoutExpired:
+                run_f.write("ERROR: Benchmark stalled and timed out.\n")
                 raise TimeoutError("Benchmark timed out")
-
             except subprocess.CalledProcessError as e:
-                msg = f"ERROR: Benchmark crashed. Return code: {e.returncode}\n"
-                global_f.write(msg)
-                if run_f:
-                    run_f.write(msg)
+                run_f.write(f"ERROR: Benchmark crashed. Return code: {e.returncode}\n")
                 raise RuntimeError(f"Benchmark crashed with return code {e.returncode}")
 
-            finally:
-                if run_f:
-                    run_f.close()
+        # Append the per-run log to the global log
+        with open(global_log_path, "a") as global_f, open(run_fpath, "r") as run_f:
+            shutil.copyfileobj(run_f, global_f)
 
+        return returncode
+            
     def profile_benchmark(self, dataset=None, dump=None, RTC=True, run_log_file=None):
         self.dataset = dataset or self.dataset
         self.param_dump = dump or self.param_dump
