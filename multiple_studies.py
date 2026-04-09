@@ -45,6 +45,11 @@ def load_spaces(tune_space_dir, kernels):
             spaces[k] = yaml.safe_load(f)
     return spaces
 
+def flatten_params(all_kernel_params):
+    merged = {}
+    for params in all_kernel_params.values():
+        merged.update(params)
+    return merged
 
 def make_sampler(startup):
     return optuna.samplers.TPESampler(
@@ -154,10 +159,15 @@ def run_backend_once(all_kernel_params, backend):
     print("\n[DEBUG] Running backend once with:")
     for k, v in all_kernel_params.items():
         print(f"{k}: {v}")
-
-    backend.update_param_file(all_kernel_params, TUNER_PARAMETER_FILE)
-    backend.profile_benchmark(TUNER_DATASET)
-
+    merged = flatten_params(all_kernel_params)
+    try:
+        backend.update_param_file(merged, TUNER_PARAMETER_FILE)
+        backend.profile_benchmark(TUNER_DATASET)
+        success = True
+    except Exception as e:
+        print(f"[ERROR] Backend failed: {e}")
+        success = False
+    return success
 
 # =========================
 # MAIN
@@ -226,16 +236,16 @@ def main():
             all_params[k] = params
 
         # 🚀 RUN ONCE
-        timings = run_backend_once(all_params, backend)
+        outcome = run_backend_once(all_params, backend)
 
         # Tell Optuna
         for k in kernels:
             if not valid[k]:
                 studies[k].tell(trials[k], float("inf"))
             else:
-                value = backend.compute_step_mean_time(k, all_params[k], TUNER_DATASET)
-                studies[k].tell(trials[k], value)
-                print(f"{k}: {value:.6f}")
+                mean, _ = backend.compute_step_mean_time(k, all_params[k], TUNER_DATASET)
+                studies[k].tell(trials[k], mean)
+                print(f"{k}: {mean:.6f}")
 
     print("\n========== DONE ==========")
 

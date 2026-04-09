@@ -23,7 +23,7 @@ class BenchmarkBackend:
         self.dataset = None
         self.param_dump = "parameters.out"
         self.debug = debug
-        self.vRAM = 15000000000
+        self.vRAM = 13000000000
         self.backend = backend if backend != "auto" else BenchmarkBackend._detect_GPUs_vendor(self.debug)
         if self.backend not in ["amd", "nvidia"]:
             print("Warning: Unsupported or unknown GPU backend detected")
