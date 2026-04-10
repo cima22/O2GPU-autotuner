@@ -221,8 +221,8 @@ def estimate_iterations(backend, time_budget_sec):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default=OUTPUT_DIR_ENV)
-    parser.add_argument("--trials", type=int, required=True)
-    parser.add_argument("--startup", type=int, required=True)
+    #parser.add_argument("--trials", type=int, required=True)
+    #parser.add_argument("--startup", type=int, required=True)
     parser.add_argument("--time_budget", default="30m", help="Time budget for tuning: minutes (30m), hours (1h), or hh:mm (1:30)")
     args = parser.parse_args()
 
@@ -240,7 +240,7 @@ def main():
     for k in kernels:
         print(f"  - {k}")
     time_budget_sec = parse_time_budget(args.time_budget)
-    trials, startup = estimate_iterations(backend, kernels, spaces, TUNER_DATASET, TUNER_PARAMETER_FILE, time_budget_sec)
+    trials, startup = estimate_iterations(backend, time_budget_sec)
 
     print(f"[INFO] Running {trials} trials with {startup} startup trials.")
     studies = {k: optuna.create_study(
