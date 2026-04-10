@@ -34,3 +34,6 @@ The tuner assumes that the repository has been cloned into the parent directory 
 `o2gpu-analyze` analyzes the result of the tuning, writes an header with the optimised parameters and dumps a .par file. It requires the directory which has to be analyzed. Moreover, it can accept the following arguments, which override the enviroment variables:
 - `--param-file` to set the param header file to be used as a baseline.
 - `--dataset` to set the tpc data dump.
+
+### Tune spaces
+The tuners optimises multiple ensemble of kernels (steps) at the same time. For a correct optimisation, these steps must be independent, i.e. they must not run at the same time on the GPU. The kernels within the same step can run concurrently. To specify a step, it is necesassary to create a directory containing one `yaml` file for each step. The default steps are present in `O2GPU_autotuner/tune_spaces`. To specify a new tune space directory, it is necessary to export the `TUNE_SPACE_DIR` env variable.
