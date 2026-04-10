@@ -1,0 +1,17 @@
+[project]
+name = "O2GPU-autotuner"
+version = "0.1.0"
+description = "GPU autotuner for O2"
+authors = [{name = "Gabriele Cimador"}]
+requires-python = ">=3.8"
+
+dependencies = [
+    "optuna",
+    "numpy",
+    "pandas",
+    "pyyaml"
+]
+
+[project.scripts]
+o2gpu-tune = "O2GPU_autotuner.tune:main"
+o2gpu-analyze = "O2GPU_autotuner.analyze:main"

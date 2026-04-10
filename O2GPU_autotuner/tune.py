@@ -8,14 +8,13 @@ import optuna
 import time
 import re
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
 
 TUNE_SPACE_DIR = os.getenv("TUNE_SPACE_DIR", os.path.join(os.path.dirname(__file__), "tune_spaces"))
-TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../standalone"))
-TUNER_DATASET = os.getenv("TUNER_DATASET", "o2-pbpb-47kHz-32")
-TUNER_PARAMETER_FILE = os.getenv("TUNER_PARAMETER_FILE", os.path.join(TUNER_WORKDIR, "defaultParams.h"))
-OUTPUT_DIR_ENV = os.getenv("OUTPUT_DIR", os.path.join(os.path.dirname(__file__), "tuning_results"))
+TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../../standalone"))
+TUNER_DATASET = os.getenv("TUNER_DATASET", "47kHz")
+TUNER_PARAMETER_FILE = os.getenv("TUNER_PARAMETER_FILE", os.path.join(os.path.dirname(__file__), "defaults", "defaultParamsNVIDIA.h"))
+OUTPUT_DIR_ENV = os.getenv("OUTPUT_DIR", os.path.join(os.getcwd(), "tuning_results"))
 
 def discover_steps(tune_space_dir):
     steps = []
