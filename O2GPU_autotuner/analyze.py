@@ -47,21 +47,23 @@ def reshape_config(flat_config):
 
 def main():
     parser = argparse.ArgumentParser(description="Extract best configs from Optuna studies and write param and header files.")
-    parser.add_argument("folder", help="Tuning folder")
+    parser.add_argument("directory", help="Tuning directory")
     parser.add_argument("--param-file", default=TUNER_PARAMETER_FILE, help="Output header file")
+    parser.add_argument("--dataset", default=TUNER_DATASET, help="Dataset to use for benchmarking")
     args = parser.parse_args()
-    folder = os.path.realpath(args.folder)
-    if not os.path.isdir(folder):
-        print(f"[ERROR] Not a directory: {folder}")
+    workdir = os.path.realpath(args.directory)
+    dataset = args.dataset
+    if not os.path.isdir(workdir):
+        print(f"[ERROR] Not a directory: {workdir}")
         return
-    db_files = [f for f in os.listdir(folder) if f.endswith(".db")]
+    db_files = [f for f in os.listdir(workdir) if f.endswith(".db")]
     if not db_files:
         print("[ERROR] No .db files found")
         return
     print("\n========== EXTRACTING BEST CONFIGS ==========\n")
     merged_config = {}
     for db in sorted(db_files):
-        db_path = os.path.join(folder, db)
+        db_path = os.path.join(workdir, db)
         try:
             study_name, value, params = load_best_from_db(db_path)
             print(f"{db}:")
@@ -76,20 +78,20 @@ def main():
             print(f"[ERROR] Failed reading {db}: {e}")
 
     print("\n========== WRITING PARAM FILE ==========\n")
-    dump_path = os.path.join(folder, "optimized.par")
+    dump_path = os.path.join(workdir, "optimized.par")
     original_cwd = os.getcwd()
     os.chdir(TUNER_WORKDIR)
     param_file = os.path.realpath(args.param_file)
     reshaped_config = reshape_config(merged_config)
     try:
-        backend = BenchmarkBackend(folder)
+        backend = BenchmarkBackend(workdir)
         backend.update_param_file(reshaped_config, param_file, dump_path=dump_path)
         print(f"[INFO] Parameter file written to: {param_file}")
         print(f"[INFO] Dump written to: {dump_path}")
         print("[INFO] Running backend to verify performance...")
 
-        def_mean, def_std_dev = backend.get_sync_mean_time(dump=None, dataset=TUNER_DATASET)
-        opt_mean, opt_std_dev = backend.get_sync_mean_time(dump=dump_path, dataset=TUNER_DATASET)
+        def_mean, def_std_dev = backend.get_sync_mean_time(dump=None, dataset=dataset)
+        opt_mean, opt_std_dev = backend.get_sync_mean_time(dump=dump_path, dataset=dataset)
         print("\n========== TIMING RESULTS ==========")
         print(f"[DEFAULT] mean = {def_mean:.6f} s | std = {def_std_dev:.6f} s")
         print(f"[OPTIMIZED] mean = {opt_mean:.6f} s | std = {opt_std_dev:.6f} s")

@@ -82,7 +82,7 @@ def is_invalid_config(kernels_param_space, backend, kernel_name):
                 return True
     return False
 
-def run_backend(all_kernel_params, backend, iteration, output_dir, steps):
+def run_backend(all_kernel_params, backend, iteration, output_dir, steps, dataset):
     print("\n[DEBUG] Running backend with:")
     for k, v in all_kernel_params.items():
         print(f"{k}: {v}")
@@ -94,7 +94,7 @@ def run_backend(all_kernel_params, backend, iteration, output_dir, steps):
     try:
         try:
             backend.update_param_file(merged, TUNER_PARAMETER_FILE, log_file=run_log)
-            backend.profile_benchmark(TUNER_DATASET, run_log_file=run_log)
+            backend.profile_benchmark(dataset, run_log_file=run_log)
             success = True
         except (RuntimeError, TimeoutError) as e:
             print(f"[INFO] Backend failed: {e}")
@@ -102,7 +102,7 @@ def run_backend(all_kernel_params, backend, iteration, output_dir, steps):
 
         if success:
             for s in steps:
-                mean, _ = backend.compute_step_mean_time(s, all_kernel_params[s], TUNER_DATASET)
+                mean, _ = backend.compute_step_mean_time(s, all_kernel_params[s], dataset)
                 timings[s] = mean
             return timings
 
@@ -122,9 +122,9 @@ def run_backend(all_kernel_params, backend, iteration, output_dir, steps):
             subset = {s: all_kernel_params[s] for s in good_steps}
             try:
                 backend.update_param_file(flatten_params(subset), TUNER_PARAMETER_FILE, log_file=run_log)
-                backend.profile_benchmark(TUNER_DATASET, run_log_file=run_log)
+                backend.profile_benchmark(dataset, run_log_file=run_log)
                 for s in good_steps:
-                    mean, _ = backend.compute_step_mean_time(s, all_kernel_params[s], TUNER_DATASET)
+                    mean, _ = backend.compute_step_mean_time(s, all_kernel_params[s], dataset)
                     timings[s] = mean
             except (RuntimeError, TimeoutError) as e:
                 print(f"[WARNING] Retry failed: {e}")
@@ -167,13 +167,16 @@ def estimate_iterations(backend, time_budget_sec):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", default=OUTPUT_DIR_ENV)
+    parser.add_argument("--output", default=OUTPUT_DIR_ENV, help="Directory to store tuning results and logs")
+    parser.add_argument("--dataset", default=TUNER_DATASET, help="Dataset to use for benchmarking")
+    parser.add_argument("--nEvents", type=int, help="Override number of events for benchmarking")
     parser.add_argument("--trials", type=int, help="Override automatically computed number of trials")
     parser.add_argument("--startup", type=int, help="Override automatically computed number of startup iterations")
     parser.add_argument("--time_budget", default="30m", help="Time budget for tuning: minutes (30m), hours (1h), or hh:mm (1:30)")
     args = parser.parse_args()
 
     output_dir = os.path.realpath(args.output)
+    dataset = args.dataset
     os.makedirs(output_dir, exist_ok=True)
     original_cwd = os.getcwd()
     os.chdir(TUNER_WORKDIR)
@@ -207,7 +210,7 @@ def main():
             valid[s] = not is_invalid_config(params, backend, s)
             all_params[s] = params
 
-        timings = run_backend(all_params, backend, iteration, output_dir, steps)
+        timings = run_backend(all_params, backend, iteration, output_dir, steps, dataset)
 
         for s in steps:
             if not valid[s]:
