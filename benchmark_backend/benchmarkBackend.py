@@ -137,9 +137,9 @@ class BenchmarkBackend:
     
     @staticmethod
     def _NVIDIA_get_number_of_streaming_multiprocessors():
-        binary_abs_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../count_SM_Nvidia")
+        cmd = "echo '#include <cuda_runtime.h>\n#include <stdio.h>\nint main(){cudaDeviceProp p;cudaGetDeviceProperties(&p,0);printf(\"%d\\n\",p.multiProcessorCount);return 0;}' > /tmp/count_sm.cu && nvcc /tmp/count_sm.cu -o /tmp/count_sm && /tmp/count_sm"
         try:
-            result = subprocess.run(binary_abs_path, shell=True, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
             nSM = int(result.stdout.strip())
         except (subprocess.CalledProcessError, ValueError):
             nSM = 1
