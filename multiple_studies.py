@@ -57,7 +57,7 @@ def make_sampler(startup):
 def build_kernel_params(trial, tune_config, backend, kernel_name):
     kernels_param_space = {}
     for param_name, spec in tune_config.items():
-        full_name = f"{kernel_name}_{param_name}"
+        full_name = param_name
         if param_name.startswith("PAR_"):
             if spec["type"] == "range":
                 kernels_param_space[param_name] = trial.suggest_int(full_name, spec["min"], spec["max"])

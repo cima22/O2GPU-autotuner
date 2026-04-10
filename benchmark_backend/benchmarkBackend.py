@@ -280,11 +280,9 @@ class BenchmarkBackend:
                     subprocess.run(command, shell=True, cwd=self.output_folder, stdout=f, stderr=f)
 
     def update_param_file(self, kernels_config, filename, dump_path=None, log_file=None):
-        base_dir = os.path.dirname(os.path.abspath(filename))
-        tmp_dir = os.path.join(base_dir, "tmp")
-        os.makedirs(tmp_dir, exist_ok=True)
-        tmp_file = os.path.join(tmp_dir, os.path.basename(filename))
+        tmp_file = f"/tmp/{os.path.basename(filename)}"
         shutil.copyfile(filename, tmp_file)
+            
         macro_updates = {}
         kernel_updates = {}
         for key, value in kernels_config.items():
@@ -328,6 +326,11 @@ class BenchmarkBackend:
 
         with open(tmp_file, "w") as f:
             f.writelines(new_lines)
+        saved_copy = None
+        if dump_path is not None:
+            out_dir = os.path.dirname(os.path.abspath(dump_path))
+            saved_copy = os.path.join(out_dir, os.path.basename(tmp_file))
+            shutil.copyfile(tmp_file, saved_copy)
         output = dump_path if dump_path else "parameters.out"
         root_command = (
             f"echo -e '#define PARAMETER_FILE \"{tmp_file}\"\\n"
@@ -472,10 +475,11 @@ class BenchmarkBackend:
     def get_sync_mean_time(self, dump=None, dataset=None):
         dataset = dataset or self.dataset
         command = [
-            "./ca", "-e", dataset,
-            "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM),
-            "--preloadEvents", "--runs", str(self.num_runs),
-            "--RTCenable", "1"]
+            "./ca", "-e", dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--preloadEvents", "--RTCenable", "1"]
+        if self.num_events and self.num_events > 1:
+            command += ["-n", str(self.num_events)]
+        else:
+            command += ["--runs", str(self.num_runs)]
         if dump:
             command += ["--RTCTECHloadLaunchBoundsFromFile", dump]
         timeout = 30 + 45 * self.num_runs  # stall timeout check
