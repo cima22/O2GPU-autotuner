@@ -157,48 +157,19 @@ class BenchmarkBackend:
 
     @staticmethod
     def _NVIDIA_detectFailingKernels(log_file, kernels):
-        """
-        Parse NVIDIA ptxas log and return failing kernels.
-
-        Parameters
-        ----------
-        log_file : str
-        kernels : list[str]
-            List of kernel names used in tuning (e.g. "tracklet")
-
-        Returns
-        -------
-        set[str]
-            Set of failing kernel names
-        """
-
         failing_kernels = set()
-
         if not os.path.exists(log_file):
             return failing_kernels
-
         with open(log_file, "r") as f:
             content = f.read()
-
-        # 🚨 Only act if there is a real error
         if "ptxas error" not in content:
             return failing_kernels
-
-        # Extract kernel names from error lines
-        matches = re.findall(
-            r"ptxas error.*Entry function 'krnl_(GPUTPC\w+)'",
-            content
-        )
-
+        matches = re.findall(r"ptxas error.*Entry function 'krnl_(GPUTPC\w+)'", content)
         for match in matches:
-            # match example: GPUTPCTrackletSelector
-
             for k in kernels:
                 if k.lower() in match.lower():
                     failing_kernels.add(k)
-
         return failing_kernels
-
 
     @staticmethod
     def _detect_profiler(profiler):
@@ -209,40 +180,19 @@ class BenchmarkBackend:
 	
     @staticmethod
     def _run_and_log(cmd, global_log_path, run_log_path=None, timeout=None):
-        """
-        Run a command and write output to:
-        - global log (append)
-        - optional per-run log (overwrite)
-    
-     Returns:
-            returncode: int
-        """
-
         run_fpath = run_log_path or "tmp_run.log"
-        # Run command, output directly to run log
         with open(run_fpath, "w") as run_f:
             try:
-                result = subprocess.run(
-                    cmd,
-                    stdout=run_f,
-                    stderr=subprocess.STDOUT,
-                    timeout=timeout,
-                    check=True,
-                    text=True
-                )
+                result = subprocess.run(cmd, stdout=run_f, stderr=subprocess.STDOUT, timeout=timeout, check=True, text=True)
                 returncode = result.returncode
-
             except subprocess.TimeoutExpired:
                 run_f.write("ERROR: Benchmark stalled and timed out.\n")
                 raise TimeoutError("Benchmark timed out")
             except subprocess.CalledProcessError as e:
                 run_f.write(f"ERROR: Benchmark crashed. Return code: {e.returncode}\n")
                 raise RuntimeError(f"Benchmark crashed with return code {e.returncode}")
-
-        # Append the per-run log to the global log
         with open(global_log_path, "a") as global_f, open(run_fpath, "r") as run_f:
             shutil.copyfileobj(run_f, global_f)
-
         return returncode
             
     def profile_benchmark(self, dataset=None, dump=None, RTC=True, run_log_file=None):
