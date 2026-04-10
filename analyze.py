@@ -26,6 +26,26 @@ def load_best_from_db(db_path):
     best = study.best_trial
     return study_name, best.value, best.params
 
+def reshape_config(flat_config):
+    kernel_updates = {}
+    macro_updates = {}
+
+    for key, value in flat_config.items():
+
+        if key.startswith("PAR_"):
+            macro_updates[key] = value
+            continue
+
+        if key.endswith("_block_size"):
+            kernel = key.replace("_block_size", "")
+            kernel_updates.setdefault(kernel, {})["block_size"] = value
+
+        elif key.endswith("_blocks_per_sm"):
+            kernel = key.replace("_blocks_per_sm", "")
+            kernel_updates.setdefault(kernel, {})["blocks_per_sm"] = value
+
+    return {**kernel_updates, **macro_updates}
+
 def main():
     parser = argparse.ArgumentParser(description="Extract best configs from Optuna studies and write param and header files.")
     parser.add_argument("folder", help="Tuning folder")
@@ -61,10 +81,10 @@ def main():
     original_cwd = os.getcwd()
     os.chdir(TUNER_WORKDIR)
     param_file = os.path.realpath(args.param_file)
-    
+    reshaped_config = reshape_config(merged_config)
     try:
         backend = BenchmarkBackend(folder)
-        backend.update_param_file(merged_config, param_file, dump_path=dump_path)
+        backend.update_param_file(reshaped_config, param_file, dump_path=dump_path)
         print(f"[INFO] Parameter file written to: {param_file}")
         print(f"[INFO] Dump written to: {dump_path}")
         print("[INFO] Running backend to verify performance...")
@@ -78,7 +98,7 @@ def main():
         if opt_mean > def_mean:
             slowdown = opt_mean - def_mean
             slowdown_pct = 100.0 * slowdown / def_mean
-            raise RuntimeError("\nOptimization FAILED: slower configuration detected\nDefault mean : {def_mean:.6f} s\nOptimized mean: {opt_mean:.6f} s\nSlowdown     : +{slowdown:.6f} s ({slowdown_pct:.2f}%)")
+            raise RuntimeError(f"\nOptimization FAILED: slower configuration detected\nDefault mean : {def_mean:.6f} s\nOptimized mean: {opt_mean:.6f} s\nSlowdown     : +{slowdown:.6f} s ({slowdown_pct:.2f}%)")
 
         gain = def_mean - opt_mean
         speedup = def_mean / opt_mean if opt_mean > 0 else float("inf")
@@ -90,7 +110,7 @@ def main():
         print("====================================\n")
 
     except Exception as e:
-        print(f"[ERROR] Failed to write parameter file: {e}")
+        print(f"[ERROR] Failed to test optimised configuration: {e}")
 
     finally:
         os.chdir(original_cwd)

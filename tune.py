@@ -2,7 +2,6 @@
 
 import argparse
 import os
-from readline import backend
 import sys
 import yaml
 import optuna
