@@ -293,6 +293,30 @@ class BenchmarkBackend:
         else:
             subprocess.run(root_command, shell=True, check=True)
 
+    def get_launch_bounds_from_param(self, kernel_name, filename):
+        tmp_file = f"/tmp/{os.path.basename(filename)}"
+
+        if not os.path.exists(tmp_file):
+            raise FileNotFoundError(f"Temporary parameter file not found: {tmp_file}")
+
+        define_name = f"GPUCA_LB_GPUTPC{kernel_name}"
+
+        pattern = re.compile(rf"^\s*#define\s+{define_name}\s+(.*)")
+
+        with open(tmp_file, "r") as f:
+            for line in f:
+                match = pattern.match(line)
+                if match:
+                    values = [v.strip() for v in match.group(1).split(",") if v.strip()]
+                
+                    block_size = int(values[0]) if len(values) >= 1 else None
+                    blocks_per_sm = int(values[1]) if len(values) >= 2 else None
+
+                    return block_size, blocks_per_sm
+
+        # Not found
+        return None, None
+
     @staticmethod
     def _write_stats_to_csv(output_file, fieldnames, rows):
         file_exists = os.path.exists(output_file)

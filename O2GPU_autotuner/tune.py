@@ -75,12 +75,12 @@ def build_step_params(trial, tune_config, backend):
                 kernels_param_space[param_name]["block_size"] = block_value
     return kernels_param_space
 
-def is_invalid_config(kernels_param_space, backend, kernel_name):
-    for param_name, spec in kernels_param_space.items():
-        if isinstance(spec, dict) and "blocks_per_sm" in spec and "block_size" in spec:
-            if spec["blocks_per_sm"] * spec["block_size"] > backend.maxThreadsPerMultiProcessor and kernel_name != "tracklet":
-                return True
-    return False
+def is_step_valid(step, kernels_param_space, backend):
+    for param_name, _ in kernels_param_space.items():
+        block_size, blocks_per_sm = backend.get_launch_bounds_from_param(param_name, TUNER_PARAMETER_FILE)
+        if block_size and blocks_per_sm and block_size * blocks_per_sm > backend.maxThreadsPerMultiProcessor and step != "tracklet":
+                return False
+    return True
 
 def run_backend(all_kernel_params, backend, iteration, output_dir, steps, dataset):
     print("\n[DEBUG] Running backend with:")
@@ -203,23 +203,21 @@ def main():
         print(f"\n========== iteration {iteration} ==========")
         trials = {s: studies[s].ask() for s in steps}
         all_params = {}
-        valid = {}
 
         for s in steps:
             params = build_step_params(trials[s], spaces[s], backend)
-            valid[s] = not is_invalid_config(params, backend, s)
             all_params[s] = params
 
         timings = run_backend(all_params, backend, iteration, output_dir, steps, dataset)
 
         for s in steps:
-            if not valid[s]:
-                studies[s].tell(trials[s], float("inf"))
-                print(f"{s}: invalid configuration → inf")
-            else:
+            if is_step_valid(s, all_params[s], backend):
                 value = timings.get(s, float("inf"))
                 studies[s].tell(trials[s], value)
                 print(f"{s}: {value:.6f}")
+            else:
+                studies[s].tell(trials[s], float("inf"))
+                print(f"{s}: invalid configuration → inf")
 
     print("\n========== DONE ==========")
     for s in steps:

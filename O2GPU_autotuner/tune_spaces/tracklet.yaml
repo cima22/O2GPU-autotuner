@@ -94,24 +94,10 @@ ExtrapolationTracking:
     max_value: 1024
     step: 1
 
-PAR_NEIGHBOURS_FINDER_MAX_NNEIGHUP:
-  type: range
-  min: 1
-  max: 15
-
 PAR_NEIGHBOURS_FINDER_UNROLL_GLOBAL:
   type: values
   values: [1, 2, 4, 8]
 
 PAR_NEIGHBOURS_FINDER_UNROLL_SHARED:
-  type: values
-  values: [0, 1]
-
-PAR_TRACKLET_SELECTOR_HITS_REG_SIZE:
-  type: range
-  min: 0
-  max: 40
-
-PAR_SORT_STARTHITS:
   type: values
   values: [0, 1]
