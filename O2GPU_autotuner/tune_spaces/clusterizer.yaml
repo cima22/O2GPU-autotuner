@@ -1,83 +1,78 @@
 CFClusterizer:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
   block_size:
     type: range
     min: 1
     max_value: 1024
     step: 1
 CFDecodeZSDenseLink:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 32
+      amd: 64
 CFNoiseSuppression_noiseSuppression:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 448
+      amd: 512
 CFDeconvolution:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 384
+      amd: 512
 CFPeakFinder:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 128
+      amd: 512
 CFCheckPadBaseline:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 64
+      amd: 64
 CFStreamCompaction_compactDigits:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 512
+      amd: 512
 CFNoiseSuppression_updatePeaks:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 448
+      amd: 512
 CFStreamCompaction_scanStart:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 512
+      amd: 512
 CFGather:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 1024
+      amd: 1024
 CFStreamCompaction_scanUp:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 512
+      amd: 512
 CFStreamCompaction_scanTop:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 512
+      amd: 512
 CFStreamCompaction_scanDown:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
+  block_size:
+    type: single
+    values:
+      nvidia: 512
+      amd: 512

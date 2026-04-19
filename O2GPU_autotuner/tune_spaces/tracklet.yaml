@@ -1,9 +1,4 @@
 TrackletConstructor:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
   block_size:
     type: range
     min: 1
@@ -11,11 +6,6 @@ TrackletConstructor:
     step: 1
 
 TrackletSelector:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
   block_size:
     type: range
     min: 1
@@ -23,11 +13,6 @@ TrackletSelector:
     step: 1
 
 NeighboursCleaner:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
   block_size:
     type: range
     min: 1
@@ -35,11 +20,6 @@ NeighboursCleaner:
     step: 1
 
 NeighboursFinder:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
   block_size:
     type: range
     min: 1
@@ -47,11 +27,6 @@ NeighboursFinder:
     step: 1
 
 StartHitsSorter:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
   block_size:
     type: range
     min: 1
@@ -59,11 +34,6 @@ StartHitsSorter:
     step: 1
 
 CreateTrackingData:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
   block_size:
     type: range
     min: 1
@@ -71,11 +41,6 @@ CreateTrackingData:
     step: 1
 
 StartHitsFinder:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
   block_size:
     type: range
     min: 1
@@ -83,11 +48,6 @@ StartHitsFinder:
     step: 1
 
 ExtrapolationTracking:
-  blocks_per_sm:
-    type: range
-    min: 1
-    max: 10
-    step: 1
   block_size:
     type: range
     min: 1

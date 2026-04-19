@@ -44,43 +44,47 @@ def make_sampler(startup):
 def build_step_params(trial, tune_config, backend):
     kernels_param_space = {}
     for param_name, spec in tune_config.items():
-        full_name = param_name
         if param_name.startswith("PAR_"):
             if spec["type"] == "range":
-                kernels_param_space[param_name] = trial.suggest_int(full_name, spec["min"], spec["max"])
+                kernels_param_space[param_name] = trial.suggest_int(
+                    param_name, spec["min"], spec["max"]
+                )
             elif spec["type"] == "values":
-                kernels_param_space[param_name] = trial.suggest_categorical(full_name, spec["values"])
-        else:
-            blocks_per_sm = None
-            block_value = None
-            if "blocks_per_sm" in spec:
-                s = spec["blocks_per_sm"]
-                name = f"{full_name}_blocks_per_sm"
-                if s["type"] == "range":
-                    blocks_per_sm = trial.suggest_int(name, s["min"], s["max"], step=s.get("step", 1))
-                elif s["type"] == "values":
-                    blocks_per_sm = trial.suggest_categorical(name, s["values"])
-            if "block_size" in spec:
-                s = spec["block_size"]
-                name = f"{full_name}_block_size"
-                if s["type"] == "range":
-                    block_value = trial.suggest_int(name, s["min"] * backend.warpSize, s["max_value"], step=s.get("step", 1) * backend.warpSize)
-                elif s["type"] == "values":
-                    warp_values = [v for v in s["values"] if v % backend.warpSize == 0]
-                    block_value = trial.suggest_categorical(name, warp_values)
-            kernels_param_space[param_name] = {}
-            if blocks_per_sm is not None:
-                kernels_param_space[param_name]["blocks_per_sm"] = blocks_per_sm
-            if block_value is not None:
-                kernels_param_space[param_name]["block_size"] = block_value
-    return kernels_param_space
+                kernels_param_space[param_name] = trial.suggest_categorical(
+                    param_name, spec["values"]
+                )
+            continue
 
-def is_step_valid(step, kernels_param_space, backend):
-    for param_name, _ in kernels_param_space.items():
-        block_size, blocks_per_sm = backend.get_launch_bounds_from_param(param_name, TUNER_PARAMETER_FILE)
-        if block_size and blocks_per_sm and block_size * blocks_per_sm > backend.maxThreadsPerMultiProcessor and step != "tracklet":
-                return False
-    return True
+        block_size = None
+        blocks_per_sm = None
+        bs_spec = spec.get("block_size", None)
+        if bs_spec is not None:
+            if bs_spec["type"] == "single":
+                block_size = bs_spec["values"][backend.backend]
+            elif bs_spec["type"] == "range":
+                name = f"{param_name}_block_size"
+                block_size = trial.suggest_int(name, bs_spec["min"] * backend.warpSize, bs_spec["max_value"], step=bs_spec.get("step", 1) * backend.warpSize)
+            elif bs_spec["type"] == "values":
+                name = f"{param_name}_block_size"
+                warp_values = [v for v in bs_spec["values"] if v % backend.warpSize == 0]
+                block_size = trial.suggest_categorical(name, warp_values)
+            block_size = (block_size // backend.warpSize) * backend.warpSize
+
+        if block_size is None:
+            raise ValueError(f"block_size not defined for {param_name}")
+        max_bpsm = backend.maxThreadsPerMultiProcessor // block_size
+        if max_bpsm < 1:
+            raise optuna.TrialPruned()
+        if "blocks_per_sm" in spec:
+            name = f"{param_name}_blocks_per_sm"
+            s = spec["blocks_per_sm"]
+
+            blocks_per_sm = trial.suggest_int(
+                name, s["min"], min(s["max"], max_bpsm), step=s.get("step", 1))
+
+        kernels_param_space[param_name] = {"block_size": block_size,"blocks_per_sm": blocks_per_sm}
+
+    return kernels_param_space
 
 def run_backend(all_kernel_params, backend, iteration, output_dir, steps, dataset):
     print("\n[DEBUG] Running backend with:")
@@ -190,17 +194,17 @@ def main():
         print(f"  - {s}")
 
     time_budget_sec = parse_time_budget(args.time_budget)
-    trials, startup = estimate_iterations(backend, time_budget_sec)
+    n_trials, startup = estimate_iterations(backend, time_budget_sec)
     if args.trials is not None:
-        trials = args.trials
+        n_trials = args.trials
     if args.startup is not None:
         startup = args.startup
     print(f"[INFO] Running {trials} trials with {startup} startup trials.")
 
     studies = {s: optuna.create_study(study_name=s, direction="minimize", sampler=make_sampler(startup), storage=f"sqlite:///{output_dir}/{s}.db", load_if_exists=True) for s in steps}
 
-    for iteration in range(trials):
-        print(f"\n========== iteration {iteration} ==========")
+    for iteration in range(n_trials):
+        print(f"\n========== iteration {iteration} / {trials} ==========")
         trials = {s: studies[s].ask() for s in steps}
         all_params = {}
 
@@ -211,13 +215,9 @@ def main():
         timings = run_backend(all_params, backend, iteration, output_dir, steps, dataset)
 
         for s in steps:
-            if is_step_valid(s, all_params[s], backend):
-                value = timings.get(s, float("inf"))
-                studies[s].tell(trials[s], value)
-                print(f"{s}: {value:.6f}")
-            else:
-                studies[s].tell(trials[s], float("inf"))
-                print(f"{s}: invalid configuration → inf")
+            value = timings.get(s, float("inf"))
+            studies[s].tell(trials[s], value)
+            print(f"{s}: {value:.6f}")
 
     print("\n========== DONE ==========")
     for s in steps:
