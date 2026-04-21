@@ -2,8 +2,7 @@
 
 import os
 import sys
-
-
+import yaml
 import argparse
 import optuna
 from optuna.study import get_all_study_summaries
@@ -11,9 +10,14 @@ from optuna.study import get_all_study_summaries
 from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
 
 TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../../standalone"))
-TUNER_DATASET = os.getenv("TUNER_DATASET", "47kHz")
-TUNER_PARAMETER_FILE = os.getenv("TUNER_PARAMETER_FILE", os.path.join(os.path.dirname(__file__), "defaults", "defaultParamsNVIDIA.h"))
-OUTPUT_DIR_ENV = os.getenv("OUTPUT_DIR", os.path.join(os.getcwd(), "tuning_results"))
+
+def load_config(output_dir):
+    config_path = os.path.join(output_dir, "run_config.yaml")
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"No config found in {output_dir}")
+    
+    with open(config_path) as f:
+        return yaml.safe_load(f)
 
 def load_best_from_db(db_path):
     storage = f"sqlite:///{db_path}"
@@ -48,14 +52,13 @@ def reshape_config(flat_config):
 def main():
     parser = argparse.ArgumentParser(description="Extract best configs from Optuna studies and write param and header files.")
     parser.add_argument("directory", help="Tuning directory")
-    parser.add_argument("--param-file", default=TUNER_PARAMETER_FILE, help="Output header file")
-    parser.add_argument("--dataset", default=TUNER_DATASET, help="Dataset to use for benchmarking")
     args = parser.parse_args()
     workdir = os.path.realpath(args.directory)
-    dataset = args.dataset
     if not os.path.isdir(workdir):
         print(f"[ERROR] Not a directory: {workdir}")
         return
+    config = load_config(workdir)
+    dataset = (config["dataset"])
     db_files = [f for f in os.listdir(workdir) if f.endswith(".db")]
     if not db_files:
         print("[ERROR] No .db files found")
@@ -79,19 +82,22 @@ def main():
 
     print("\n========== WRITING PARAM FILE ==========\n")
     dump_path = os.path.join(workdir, "optimized.par")
+    header_path = os.path.join(workdir, "optimized.h")
     original_cwd = os.getcwd()
     os.chdir(TUNER_WORKDIR)
-    param_file = os.path.realpath(args.param_file)
+    param_file = os.path.realpath(str(config["parameter_file"]))
     reshaped_config = reshape_config(merged_config)
     try:
         backend = BenchmarkBackend(workdir)
-        backend.update_param_file(reshaped_config, param_file, dump_path=dump_path)
-        print(f"[INFO] Parameter file written to: {param_file}")
+        backend.dataset = dataset
+        backend.num_events = config["nEvents"]
+        backend.update_param_file(reshaped_config, param_file, modified_header_path = header_path, dump_path=dump_path)
+        print(f"[INFO] Parameter file written to: {header_path}")
         print(f"[INFO] Dump written to: {dump_path}")
         print("[INFO] Running backend to verify performance...")
 
-        def_mean, def_std_dev = backend.get_sync_mean_time(dump=None, dataset=dataset)
-        opt_mean, opt_std_dev = backend.get_sync_mean_time(dump=dump_path, dataset=dataset)
+        def_mean, def_std_dev = backend.get_sync_mean_time(dump=None)
+        opt_mean, opt_std_dev = backend.get_sync_mean_time(dump=dump_path)
         print("\n========== TIMING RESULTS ==========")
         print(f"[DEFAULT] mean = {def_mean:.6f} s | std = {def_std_dev:.6f} s")
         print(f"[OPTIMIZED] mean = {opt_mean:.6f} s | std = {opt_std_dev:.6f} s")

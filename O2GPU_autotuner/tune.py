@@ -7,8 +7,19 @@ import yaml
 import optuna
 import time
 import re
+from dataclasses import dataclass, asdict
 
 from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
+
+@dataclass
+class TunerConfig:
+    output: str
+    dataset: str
+    nEvents: int | None
+    trials: int | None
+    startup: int | None
+    time_budget: str
+    parameter_file: str
 
 TUNE_SPACE_DIR = os.getenv("TUNE_SPACE_DIR", os.path.join(os.path.dirname(__file__), "tune_spaces"))
 TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../../standalone"))
@@ -46,13 +57,9 @@ def build_step_params(trial, tune_config, backend):
     for param_name, spec in tune_config.items():
         if param_name.startswith("PAR_"):
             if spec["type"] == "range":
-                kernels_param_space[param_name] = trial.suggest_int(
-                    param_name, spec["min"], spec["max"]
-                )
+                kernels_param_space[param_name] = trial.suggest_int(param_name, spec["min"], spec["max"])
             elif spec["type"] == "values":
-                kernels_param_space[param_name] = trial.suggest_categorical(
-                    param_name, spec["values"]
-                )
+                kernels_param_space[param_name] = trial.suggest_categorical(param_name, spec["values"])
             continue
 
         block_size = None
@@ -72,33 +79,34 @@ def build_step_params(trial, tune_config, backend):
 
         if block_size is None:
             raise ValueError(f"block_size not defined for {param_name}")
-        max_bpsm = backend.maxThreadsPerMultiProcessor // block_size
+
+        stats = backend.get_kernel_HW_stats(param_name)
+        shm = stats["shared_memory"]
+        max_bpsm_threads = backend.GPUlimits["max_threads_per_sm"] // block_size
+        max_bpsm_hw     = backend.GPUlimits["max_blocks_per_sm"]
+        max_bpsm_shm    = backend.GPUlimits["shared_mem_per_sm"] // shm if shm > 0 else max_bpsm_hw
+        max_bpsm        = min(max_bpsm_threads, max_bpsm_hw, max_bpsm_shm)
+
         if max_bpsm < 1:
             raise optuna.TrialPruned()
-        if "blocks_per_sm" in spec:
-            name = f"{param_name}_blocks_per_sm"
-            s = spec["blocks_per_sm"]
 
-            blocks_per_sm = trial.suggest_int(
-                name, s["min"], min(s["max"], max_bpsm), step=s.get("step", 1))
-
-        kernels_param_space[param_name] = {"block_size": block_size,"blocks_per_sm": blocks_per_sm}
+        name = f"{param_name}_blocks_per_sm"
+        blocks_per_sm = trial.suggest_int(name, 1, max_bpsm, step=1)
+        kernels_param_space[param_name] = {"block_size": block_size, "blocks_per_sm": blocks_per_sm}
 
     return kernels_param_space
 
-def run_backend(all_kernel_params, backend, iteration, output_dir, steps, dataset):
+def run_backend(all_kernel_params, backend, iteration, output_dir, steps):
     print("\n[DEBUG] Running backend with:")
     for k, v in all_kernel_params.items():
         print(f"{k}: {v}")
-
     merged = flatten_params(all_kernel_params)
     run_log = os.path.join(output_dir, f"run_{iteration}.log")
     timings = {}
-
     try:
         try:
             backend.update_param_file(merged, TUNER_PARAMETER_FILE, log_file=run_log)
-            backend.profile_benchmark(dataset, run_log_file=run_log)
+            backend.profile_benchmark(run_log_file=run_log)
             success = True
         except (RuntimeError, TimeoutError) as e:
             print(f"[INFO] Backend failed: {e}")
@@ -106,7 +114,7 @@ def run_backend(all_kernel_params, backend, iteration, output_dir, steps, datase
 
         if success:
             for s in steps:
-                mean, _ = backend.compute_step_mean_time(s, all_kernel_params[s], dataset)
+                mean, _ = backend.compute_step_mean_time(s, all_kernel_params[s])
                 timings[s] = mean
             return timings
 
@@ -126,9 +134,9 @@ def run_backend(all_kernel_params, backend, iteration, output_dir, steps, datase
             subset = {s: all_kernel_params[s] for s in good_steps}
             try:
                 backend.update_param_file(flatten_params(subset), TUNER_PARAMETER_FILE, log_file=run_log)
-                backend.profile_benchmark(dataset, run_log_file=run_log)
+                backend.profile_benchmark(run_log_file=run_log)
                 for s in good_steps:
-                    mean, _ = backend.compute_step_mean_time(s, all_kernel_params[s], dataset)
+                    mean, _ = backend.compute_step_mean_time(s, all_kernel_params[s])
                     timings[s] = mean
             except (RuntimeError, TimeoutError) as e:
                 print(f"[WARNING] Retry failed: {e}")
@@ -160,7 +168,7 @@ def estimate_iterations(backend, time_budget_sec):
     print("[INFO] Running empty iteration to estimate timing...")
     t0 = time.time()
     backend.update_param_file({}, TUNER_PARAMETER_FILE, log_file="/tmp/empty_run.log")
-    backend.profile_benchmark(TUNER_DATASET)
+    backend.profile_benchmark()
     t1 = time.time()
     iter_time = t1 - t0
     print(f"[INFO] Estimated iteration time: {iter_time:.2f}s")
@@ -180,12 +188,28 @@ def main():
     args = parser.parse_args()
 
     output_dir = os.path.realpath(args.output)
-    dataset = args.dataset
     os.makedirs(output_dir, exist_ok=True)
     original_cwd = os.getcwd()
-    os.chdir(TUNER_WORKDIR)
 
+    config = TunerConfig(
+        output=os.path.realpath(args.output),
+        dataset=str(args.dataset),
+        nEvents=args.nEvents,
+        trials=args.trials,
+        startup=args.startup,
+        time_budget=args.time_budget,
+        parameter_file=TUNER_PARAMETER_FILE,
+    )
+    config_path = os.path.join(output_dir, "run_config.yaml")
+    with open(config_path, "w") as f:
+        yaml.safe_dump(asdict(config), f, sort_keys=False)
+
+    os.chdir(TUNER_WORKDIR)
     backend = BenchmarkBackend(output_dir)
+    dataset = str(args.dataset)
+    backend.dataset = dataset
+    if args.nEvents is not None:
+        backend.num_events = args.nEvents
     steps = discover_steps(TUNE_SPACE_DIR)
     spaces = load_spaces(TUNE_SPACE_DIR, steps)
 
@@ -199,20 +223,19 @@ def main():
         n_trials = args.trials
     if args.startup is not None:
         startup = args.startup
-    print(f"[INFO] Running {trials} trials with {startup} startup trials.")
+    print(f"[INFO] Running {n_trials} trials with {startup} startup trials.")
 
     studies = {s: optuna.create_study(study_name=s, direction="minimize", sampler=make_sampler(startup), storage=f"sqlite:///{output_dir}/{s}.db", load_if_exists=True) for s in steps}
 
     for iteration in range(n_trials):
-        print(f"\n========== iteration {iteration} / {trials} ==========")
+        print(f"\n========== iteration {iteration} / {n_trials} ==========")
         trials = {s: studies[s].ask() for s in steps}
         all_params = {}
 
         for s in steps:
             params = build_step_params(trials[s], spaces[s], backend)
             all_params[s] = params
-
-        timings = run_backend(all_params, backend, iteration, output_dir, steps, dataset)
+        timings = run_backend(all_params, backend, iteration, output_dir, steps)
 
         for s in steps:
             value = timings.get(s, float("inf"))

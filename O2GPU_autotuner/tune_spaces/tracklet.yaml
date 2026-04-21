@@ -56,7 +56,7 @@ ExtrapolationTracking:
 
 PAR_NEIGHBOURS_FINDER_UNROLL_GLOBAL:
   type: values
-  values: [1, 2, 4, 8]
+  values: [2, 4, 8]
 
 PAR_NEIGHBOURS_FINDER_UNROLL_SHARED:
   type: values

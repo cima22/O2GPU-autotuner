@@ -25,6 +25,7 @@ class BenchmarkBackend:
         self.debug = debug
         self.vRAM = 13000000000
         self.backend = backend if backend != "auto" else BenchmarkBackend._detect_GPUs_vendor(self.debug)
+        self._kernel_hw_stats_cache = {}
         if self.backend not in ["amd", "nvidia"]:
             print("Warning: Unsupported or unknown GPU backend detected")
             return
@@ -34,18 +35,20 @@ class BenchmarkBackend:
             self.gpu_lang = "HIP"
             self.warpSize = BenchmarkBackend._AMD_get_warp_size()
             self.nSMs = BenchmarkBackend._AMD_get_number_of_compute_units()
-            self.maxThreadsPerMultiProcessor = BenchmarkBackend._AMD_get_max_threads_per_cu()
+            self.GPUlimits = BenchmarkBackend._AMD_get_sm_limits()
             self._get_df_from_raw = self._AMD_get_df_from_raw
             self.detectFailingKernels = self._AMD_detectFailingKernels
+            self.get_kernel_HW_stats = self._AMD_get_kernel_HW_stats
         if self.backend == "nvidia":
             self.profiler = "nsys"
             self.profiler_options = ["profile", "-o", f"{os.path.join(self.output_folder, 'report.nsys-rep')}", "--force-overwrite", "true"]
             self.gpu_lang = "CUDA"
             self.warpSize = BenchmarkBackend._NVIDIA_get_warp_size()
             self.nSMs = BenchmarkBackend._NVIDIA_get_number_of_streaming_multiprocessors()
-            self.maxThreadsPerMultiProcessor = BenchmarkBackend._NVIDIA_get_max_threads_per_sm()
+            self.GPUlimits = BenchmarkBackend._NVIDIA_get_sm_limits()
             self._get_df_from_raw = self._NVIDIA_get_df_from_raw
             self.detectFailingKernels = self._NVIDIA_detectFailingKernels
+            self.get_kernel_HW_stats = self._NVIDIA_get_kernel_HW_stats
         try:
             BenchmarkBackend._detect_profiler(self.profiler)
         except FileNotFoundError as e:
@@ -130,7 +133,15 @@ class BenchmarkBackend:
         except (subprocess.CalledProcessError, ValueError):
             maxThreadsPerMultiProcessor = 2560
         return maxThreadsPerMultiProcessor
+
+    @staticmethod
+    def _AMD_get_kernel_HW_stats():
+        pass
     
+    @staticmethod
+    def _AMD_get_sm_limits():
+        pass
+
     @staticmethod
     def _NVIDIA_get_warp_size():
         return 32
@@ -156,6 +167,18 @@ class BenchmarkBackend:
         return max_threads
 
     @staticmethod
+    def _NVIDIA_get_sm_limits():
+        cmd = ("echo '#include <cuda_runtime.h>\n#include <stdio.h>\nint main(){cudaDeviceProp p;cudaGetDeviceProperties(&p,0);"
+            "printf(\"%d %d %d %d\\n\",p.maxThreadsPerMultiProcessor,p.regsPerMultiprocessor,p.sharedMemPerBlock,p.maxBlocksPerMultiProcessor);return 0;}' "
+            "> /tmp/sm_limits.cu && nvcc /tmp/sm_limits.cu -o /tmp/sm_limits && /tmp/sm_limits")
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+            max_threads, regs, shm, max_blocks = map(int, result.stdout.strip().split())
+        except (subprocess.CalledProcessError, ValueError):
+            max_threads, regs, shm, max_blocks = 2048, 65536, 49152, 32
+        return {"max_threads_per_sm": max_threads, "registers_per_sm": regs, "shared_mem_per_sm": shm, "max_blocks_per_sm": max_blocks}
+
+    @staticmethod
     def _NVIDIA_detectFailingKernels(log_file, kernels):
         failing_kernels = set()
         if not os.path.exists(log_file):
@@ -170,6 +193,52 @@ class BenchmarkBackend:
                 if k.lower() in match.lower():
                     failing_kernels.add(k)
         return failing_kernels
+    
+    @staticmethod
+    def _NVIDIA_get_compute_capability():
+        cmd = "echo '#include <cuda_runtime.h>\n#include <stdio.h>\nint main(){cudaDeviceProp p;cudaGetDeviceProperties(&p,0);printf(\"%d%d\\n\",p.major,p.minor);return 0;}' > /tmp/get_cc.cu && nvcc /tmp/get_cc.cu -o /tmp/get_cc && /tmp/get_cc"
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+            return result.stdout.strip()      
+        except (subprocess.CalledProcessError, ValueError):
+            return None
+
+    def _NVIDIA_get_kernel_HW_stats(self, kernel_name):
+        if kernel_name in self._kernel_hw_stats_cache:
+            return self._kernel_hw_stats_cache[kernel_name]
+        CC = BenchmarkBackend._NVIDIA_get_compute_capability()
+        arch = f"sm_{CC}" if CC else None
+        fatbin_dir = "build/GPU/GPUTracking/Base/cuda/cuda_kernel_module_fatbin"
+        pattern = os.path.join(fatbin_dir, f"krnl_GPUTPC*{kernel_name}*.fatbin")
+        matches = glob.glob(pattern)
+        if not matches:
+            raise FileNotFoundError(f"No fatbin found for kernel '{kernel_name}' in {fatbin_dir}")
+        result = subprocess.run(["cuobjdump", "--dump-resource-usage", matches[0]], capture_output=True, text=True, check=True)
+        regs = None
+        shm  = None
+        current_arch = None
+        in_kernel = False
+        for line in result.stdout.splitlines():
+            m_arch = re.search(r"arch = (\S+)", line)
+            if m_arch:
+                current_arch = m_arch.group(1)
+                in_kernel = False
+                continue
+            if f"Function krnl_GPUTPC" in line and kernel_name in line:
+                if arch is None or current_arch == arch:
+                    in_kernel = True
+                continue
+            if in_kernel:
+                m = re.search(r"REG:(\d+).*SHARED:(\d+)", line)
+                if m:
+                    regs = int(m.group(1))
+                    shm  = int(m.group(2))
+                in_kernel = False
+        if regs is None or shm is None:
+            raise ValueError(f"Could not parse resource usage for kernel '{kernel_name}' in {matches[0]}")
+        stats = {"registers": regs, "shared_memory": shm}
+        self._kernel_hw_stats_cache[kernel_name] = stats
+        return stats
 
     @staticmethod
     def _detect_profiler(profiler):
@@ -202,7 +271,7 @@ class BenchmarkBackend:
             rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
         command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--preloadEvents"]
-        if self.num_events and self.num_events > 1:
+        if self.num_events and self.num_events > 0:
             command += ["-n", str(self.num_events)]
         else:
             command += ["--runs", str(self.num_runs)]
@@ -229,7 +298,7 @@ class BenchmarkBackend:
                 with open(self.benchmark_backend_log, 'a') as f:
                     subprocess.run(command, shell=True, cwd=self.output_folder, stdout=f, stderr=f)
 
-    def update_param_file(self, kernels_config, filename, dump_path=None, log_file=None):
+    def update_param_file(self, kernels_config, filename, modified_header_path = None, dump_path=None, log_file=None):
         tmp_file = f"/tmp/{os.path.basename(filename)}"
         shutil.copyfile(filename, tmp_file)
             
@@ -281,6 +350,8 @@ class BenchmarkBackend:
             out_dir = os.path.dirname(os.path.abspath(dump_path))
             saved_copy = os.path.join(out_dir, os.path.basename(tmp_file))
             shutil.copyfile(tmp_file, saved_copy)
+        if modified_header_path is not None:
+            shutil.copyfile(tmp_file, modified_header_path)
         output = dump_path if dump_path else "parameters.out"
         root_command = (
             f"echo -e '#define PARAMETER_FILE \"{tmp_file}\"\\n"
@@ -450,7 +521,7 @@ class BenchmarkBackend:
         dataset = dataset or self.dataset
         command = [
             "./ca", "-e", dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--preloadEvents", "--RTCenable", "1"]
-        if self.num_events and self.num_events > 1:
+        if self.num_events and self.num_events > 0:
             command += ["-n", str(self.num_events)]
         else:
             command += ["--runs", str(self.num_runs)]
