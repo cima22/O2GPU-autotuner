@@ -8,6 +8,7 @@ import optuna
 import time
 import re
 from dataclasses import dataclass, asdict
+from typing import Optional
 
 from O2GPU_autotuner.benchmark_backend.benchmarkBackend import BenchmarkBackend
 from O2GPU_autotuner.step_tuner import StepTuner
@@ -17,9 +18,9 @@ from O2GPU_autotuner.orchestrator import Orchestrator
 class TunerConfig:
     output: str
     dataset: str
-    nEvents: int | None
-    trials: int | None
-    startup: int | None
+    nEvents: Optional[int]
+    trials: Optional[int]
+    startup: Optional[int]
     time_budget: str
     parameter_file: str
 
