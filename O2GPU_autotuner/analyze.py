@@ -24,28 +24,44 @@ def load_best_from_db(db_path):
     summaries = get_all_study_summaries(storage=storage)
     if not summaries:
         raise RuntimeError("No studies found in DB")
+
     study_name = summaries[0].study_name
     study = optuna.load_study(study_name=study_name, storage=storage)
     best = study.best_trial
-    return study_name, best.value, best.params
 
-def reshape_config(flat_config):
+    return study_name, best.value, best.params, best.user_attrs
+
+def load_trial_from_db(db_path):
+    storage = f"sqlite:///{db_path}"
+    summaries = get_all_study_summaries(storage=storage)
+    if not summaries:
+        raise RuntimeError("No studies found in DB")
+
+    study_name = summaries[0].study_name
+    study = optuna.load_study(study_name=study_name, storage=storage)
+
+    trial = study.trials[0]  # 👈 direct access
+    return study_name, trial.value, trial.params, trial.user_attrs
+
+def reshape_config(flat_params, user_attrs):
     kernel_updates = {}
     macro_updates = {}
-
-    for key, value in flat_config.items():
-
+    # macros still from params
+    for key, value in flat_params.items():
         if key.startswith("PAR_"):
             macro_updates[key] = value
-            continue
-
+    # everything else from user_attrs ONLY
+    for key, value in user_attrs.items():
         if key.endswith("_block_size"):
-            kernel = key.replace("_block_size", "")
+            kernel = key[:-len("_block_size")]
             kernel_updates.setdefault(kernel, {})["block_size"] = value
-
         elif key.endswith("_blocks_per_sm"):
-            kernel = key.replace("_blocks_per_sm", "")
+            kernel = key[:-len("_blocks_per_sm")]
             kernel_updates.setdefault(kernel, {})["blocks_per_sm"] = value
+    # validation
+    for k, v in kernel_updates.items():
+        if "block_size" not in v or "blocks_per_sm" not in v:
+            raise RuntimeError(f"Incomplete kernel config: {k}")
 
     return {**kernel_updates, **macro_updates}
 
@@ -65,18 +81,24 @@ def main():
         return
     print("\n========== EXTRACTING BEST CONFIGS ==========\n")
     merged_config = {}
+    merged_user_attrs = {}
     for db in sorted(db_files):
         db_path = os.path.join(workdir, db)
         try:
-            study_name, value, params = load_best_from_db(db_path)
+            study_name, value, params, user_attrs = load_best_from_db(db_path)
             print(f"{db}:")
             print(f"  study: {study_name}")
             print(f"  best value: {value}")
-            print(f"  params: {params}\n")
+            print(f"  params: {params}")
+            print(f"  user attrs: {user_attrs}\n")
             for k, v in params.items():
                 if k in merged_config:
                     print(f"[WARNING] Overwriting key: {k}")
                 merged_config[k] = v
+            for k, v in user_attrs.items():
+                if k in merged_user_attrs:
+                    print(f"[WARNING] Overwriting key: {k}")
+                merged_user_attrs[k] = v
         except Exception as e:
             print(f"[ERROR] Failed reading {db}: {e}")
 
@@ -86,7 +108,7 @@ def main():
     original_cwd = os.getcwd()
     os.chdir(TUNER_WORKDIR)
     param_file = os.path.realpath(str(config["parameter_file"]))
-    reshaped_config = reshape_config(merged_config)
+    reshaped_config = reshape_config(merged_config, merged_user_attrs)
     try:
         backend = BenchmarkBackend(workdir)
         backend.dataset = dataset

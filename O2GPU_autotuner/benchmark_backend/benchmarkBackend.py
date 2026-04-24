@@ -10,6 +10,7 @@ import pandas as pd
 import glob
 import shutil
 import json
+from pathlib import Path
 import re
 
 class BenchmarkBackend:
@@ -26,6 +27,8 @@ class BenchmarkBackend:
         self.vRAM = 13000000000
         self.backend = backend if backend != "auto" else BenchmarkBackend._detect_GPUs_vendor(self.debug)
         self._kernel_hw_stats_cache = {}
+        if os.path.exists("rtccache"):
+            shutil.rmtree("rtccache", ignore_errors=True)
         if self.backend not in ["amd", "nvidia"]:
             print("Warning: Unsupported or unknown GPU backend detected")
             return
@@ -38,7 +41,7 @@ class BenchmarkBackend:
             self.GPUlimits = BenchmarkBackend._AMD_get_sm_limits()
             self._get_df_from_raw = self._AMD_get_df_from_raw
             self.detectFailingKernels = self._AMD_detectFailingKernels
-            self.get_kernel_HW_stats = self._AMD_get_kernel_HW_stats
+            self.get_rtc_HW_stats = self._AMD_get_rtc_HW_stats
         if self.backend == "nvidia":
             self.profiler = "nsys"
             self.profiler_options = ["profile", "-o", f"{os.path.join(self.output_folder, 'report.nsys-rep')}", "--force-overwrite", "true"]
@@ -48,7 +51,7 @@ class BenchmarkBackend:
             self.GPUlimits = BenchmarkBackend._NVIDIA_get_sm_limits()
             self._get_df_from_raw = self._NVIDIA_get_df_from_raw
             self.detectFailingKernels = self._NVIDIA_detectFailingKernels
-            self.get_kernel_HW_stats = self._NVIDIA_get_kernel_HW_stats
+            self.get_rtc_HW_stats = self._NVIDIA_get_rtc_HW_stats
         try:
             BenchmarkBackend._detect_profiler(self.profiler)
         except FileNotFoundError as e:
@@ -179,20 +182,15 @@ class BenchmarkBackend:
         return {"max_threads_per_sm": max_threads, "registers_per_sm": regs, "shared_mem_per_sm": shm, "max_blocks_per_sm": max_blocks}
 
     @staticmethod
-    def _NVIDIA_detectFailingKernels(log_file, kernels):
-        failing_kernels = set()
+    def _NVIDIA_detectFailingKernels(log_file):
         if not os.path.exists(log_file):
-            return failing_kernels
+            return set()
         with open(log_file, "r") as f:
             content = f.read()
         if "ptxas error" not in content:
-            return failing_kernels
-        matches = re.findall(r"ptxas error.*Entry function 'krnl_(GPUTPC\w+)'", content)
-        for match in matches:
-            for k in kernels:
-                if k.lower() in match.lower():
-                    failing_kernels.add(k)
-        return failing_kernels
+            return set()
+        matches = re.findall(r"ptxas error.*Entry function 'krnl_GPUTPC(\w+)'", content, re.DOTALL)
+        return set(matches)
     
     @staticmethod
     def _NVIDIA_get_compute_capability():
@@ -203,41 +201,42 @@ class BenchmarkBackend:
         except (subprocess.CalledProcessError, ValueError):
             return None
 
-    def _NVIDIA_get_kernel_HW_stats(self, kernel_name):
-        if kernel_name in self._kernel_hw_stats_cache:
-            return self._kernel_hw_stats_cache[kernel_name]
+    @staticmethod
+    def _NVIDIA_get_rtc_HW_stats(fatbin_files=None):
         CC = BenchmarkBackend._NVIDIA_get_compute_capability()
         arch = f"sm_{CC}" if CC else None
-        fatbin_dir = "build/GPU/GPUTracking/Base/cuda/cuda_kernel_module_fatbin"
-        pattern = os.path.join(fatbin_dir, f"krnl_GPUTPC*{kernel_name}*.fatbin")
-        matches = glob.glob(pattern)
-        if not matches:
-            raise FileNotFoundError(f"No fatbin found for kernel '{kernel_name}' in {fatbin_dir}")
-        result = subprocess.run(["cuobjdump", "--dump-resource-usage", matches[0]], capture_output=True, text=True, check=True)
-        regs = None
-        shm  = None
-        current_arch = None
-        in_kernel = False
-        for line in result.stdout.splitlines():
-            m_arch = re.search(r"arch = (\S+)", line)
-            if m_arch:
-                current_arch = m_arch.group(1)
-                in_kernel = False
+        if fatbin_files is None:
+            fatbin_files = glob.glob("/tmp/o2cagpu_rtc_*.fatbin")
+        if not fatbin_files:
+            return {}
+        stats = {}
+        for fatbin_path in fatbin_files:
+            try:
+                result = subprocess.run(["cuobjdump", "--dump-resource-usage", fatbin_path], capture_output=True, text=True, check=True)
+            except subprocess.CalledProcessError:
                 continue
-            if f"Function krnl_GPUTPC" in line and kernel_name in line:
-                if arch is None or current_arch == arch:
-                    in_kernel = True
-                continue
-            if in_kernel:
-                m = re.search(r"REG:(\d+).*SHARED:(\d+)", line)
-                if m:
-                    regs = int(m.group(1))
-                    shm  = int(m.group(2))
-                in_kernel = False
-        if regs is None or shm is None:
-            raise ValueError(f"Could not parse resource usage for kernel '{kernel_name}' in {matches[0]}")
-        stats = {"registers": regs, "shared_memory": shm}
-        self._kernel_hw_stats_cache[kernel_name] = stats
+            current_arch   = None
+            current_kernel = None
+            for line in result.stdout.splitlines():
+                m_arch = re.search(r"arch = (\S+)", line)
+                if m_arch:
+                    current_arch   = m_arch.group(1)
+                    current_kernel = None
+                    continue
+                m_func = re.search(r"Function (krnl_GPUTPC[^\s:]+)", line)
+                if m_func:
+                    if arch is None or current_arch == arch:
+                        raw_name = m_func.group(1)
+                        clean_name = (raw_name.replace("krnl_", "").replace("GPUTPC", "").rstrip(":"))
+                        current_kernel = clean_name
+                    else:
+                        current_kernel = None
+                    continue
+                if current_kernel is not None:
+                    m = re.search(r"REG:(\d+).*SHARED:(\d+)", line)
+                    if m:
+                        stats[current_kernel] = {"registers": int(m.group(1)), "shared_memory": int(m.group(2))}
+                        current_kernel = None
         return stats
 
     @staticmethod
@@ -264,6 +263,20 @@ class BenchmarkBackend:
             shutil.copyfileobj(run_f, global_f)
         return returncode
             
+    def rtc(self, dump=None, rtc_cache=True, return_stats=True, log_file=None):
+        rtc_log = log_file or os.path.join(self.output_folder, "rtc.log")
+        dump_path = dump or self.param_dump
+        command = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--RTCenable", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", dump_path]
+        if rtc_cache:
+            command += ["--RTCcacheOutput", "1"]
+        if return_stats:
+            command += ["--RTCTECHkeepTempFiles", "1"]
+            for f in glob.glob("/tmp/o2cagpu_rtc_*"):
+                os.remove(f)
+        self._run_and_log(command, rtc_log, run_log_path=rtc_log, timeout=90)
+        if return_stats:
+            return self.get_rtc_HW_stats()
+
     def profile_benchmark(self, dataset=None, dump=None, RTC=True, run_log_file=None):
         self.dataset = dataset or self.dataset
         self.param_dump = dump or self.param_dump
@@ -328,12 +341,12 @@ class BenchmarkBackend:
                 existing_vals = [v.strip() for v in rest.split(",") if v.strip()]
                 if not existing_vals:
                     continue
-                if "block_size" in config:
+                if "block_size" in config and config["block_size"] is not None:
                     if len(existing_vals) >= 1:
                         existing_vals[0] = str(config["block_size"])
                     else:
                         existing_vals = [str(config["block_size"])]
-                if "blocks_per_sm" in config:
+                if "blocks_per_sm" in config and config["blocks_per_sm"] is not None:
                     if len(existing_vals) >= 2:
                         existing_vals[1] = str(config["blocks_per_sm"])
                     else:
