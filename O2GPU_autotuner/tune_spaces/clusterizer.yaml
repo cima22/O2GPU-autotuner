@@ -41,7 +41,7 @@ PAR_CF_SCAN_WORKGROUP_SIZE:
     max_value: 512
     step: 1
 
-GPUCA_PAR_LB_GPUTPCCFNoiseSuppression:
+PAR_LB_GPUTPCCFNoiseSuppression:
     type: block_size_range
     min: 1
     max_value: 512
