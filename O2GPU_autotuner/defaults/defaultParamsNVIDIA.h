@@ -54,7 +54,7 @@
 #define GPUCA_LB_GPUTPCDecompressionUtilKernels_sortPerSectorRow 256
 #define GPUCA_LB_GPUTPCDecompressionUtilKernels_countFilteredClusters 256
 #define GPUCA_LB_GPUTPCDecompressionUtilKernels_storeFilteredClusters 256
-#define GPUCA_LB_GPUTPCCFCheckPadBaseline 64, 8
+#define GPUCA_LB_GPUTPCCFCheckPadBaseline 576, 8
 #define GPUCA_LB_GPUTPCCFChargeMapFiller_fillIndexMap 448
 #define GPUCA_LB_GPUTPCCFChargeMapFiller_fillFromDigits 448
 #define GPUCA_LB_GPUTPCCFChargeMapFiller_findFragmentStart 448

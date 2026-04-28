@@ -2,7 +2,7 @@ CFClusterizer:
   block_size:
     type: range
     min: 1
-    max_value: 1024
+    max_value: 512
     step: 1
 CFDecodeZSDenseLink:
   block_size:
@@ -32,8 +32,8 @@ CFCheckPadBaseline:
   block_size:
     type: single
     values:
-      nvidia: 64
-      amd: 64
+      nvidia: 576
+      amd: 576
 CFStreamCompaction_compactDigits:
   block_size:
     type: single

@@ -2,56 +2,56 @@ TrackletConstructor:
   block_size:
     type: range
     min: 1
-    max_value: 1024
+    max_value: 512
     step: 1
 
 TrackletSelector:
   block_size:
     type: range
     min: 1
-    max_value: 1024
+    max_value: 512
     step: 1
 
 NeighboursCleaner:
   block_size:
     type: range
     min: 1
-    max_value: 1024
+    max_value: 512
     step: 1
 
 NeighboursFinder:
   block_size:
     type: range
     min: 1
-    max_value: 1024
+    max_value: 512
     step: 1
 
 StartHitsSorter:
   block_size:
     type: range
     min: 1
-    max_value: 1024
+    max_value: 512
     step: 1
 
 CreateTrackingData:
   block_size:
     type: range
     min: 1
-    max_value: 1024
+    max_value: 512
     step: 1
 
 StartHitsFinder:
   block_size:
     type: range
     min: 1
-    max_value: 1024
+    max_value: 512
     step: 1
 
 ExtrapolationTracking:
   block_size:
     type: range
     min: 1
-    max_value: 1024
+    max_value: 512
     step: 1
 
 PAR_NEIGHBOURS_FINDER_UNROLL_GLOBAL:
