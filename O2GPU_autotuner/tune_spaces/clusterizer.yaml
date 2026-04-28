@@ -10,69 +10,39 @@ CFDecodeZSDenseLink:
     values:
       nvidia: 32
       amd: 64
-CFNoiseSuppression_noiseSuppression:
-  block_size:
-    type: single
-    values:
-      nvidia: 448
-      amd: 512
 CFDeconvolution:
   block_size:
-    type: single
-    values:
-      nvidia: 384
-      amd: 512
+    type: range
+    min: 1
+    max_value: 512
+    step: 1
 CFPeakFinder:
   block_size:
-    type: single
-    values:
-      nvidia: 128
-      amd: 512
+    type: range
+    min: 1
+    max_value: 512
+    step: 1
 CFCheckPadBaseline:
   block_size:
     type: single
     values:
       nvidia: 576
       amd: 576
-CFStreamCompaction_compactDigits:
-  block_size:
-    type: single
-    values:
-      nvidia: 512
-      amd: 512
-CFNoiseSuppression_updatePeaks:
-  block_size:
-    type: single
-    values:
-      nvidia: 448
-      amd: 512
-CFStreamCompaction_scanStart:
-  block_size:
-    type: single
-    values:
-      nvidia: 512
-      amd: 512
 CFGather:
   block_size:
-    type: single
-    values:
-      nvidia: 1024
-      amd: 1024
-CFStreamCompaction_scanUp:
-  block_size:
-    type: single
-    values:
-      nvidia: 512
-      amd: 512
-CFStreamCompaction_scanTop:
-  block_size:
-    type: single
-    values:
-      nvidia: 512
-      amd: 512
-CFStreamCompaction_scanDown:
-  block_size:
-    type: single
-    values:
-      nvidia: 512
-      amd: 512
+    type: range
+    min: 1
+    max_value: 512
+    step: 1
+
+PAR_CF_SCAN_WORKGROUP_SIZE:
+    type: block_size_range
+    min: 1
+    max_value: 512
+    step: 1
+
+GPUCA_PAR_LB_GPUTPCCFNoiseSuppression:
+    type: block_size_range
+    min: 1
+    max_value: 512
+    step: 1

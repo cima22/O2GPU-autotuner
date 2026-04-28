@@ -49,6 +49,8 @@ class StepTuner:
             return self.trial.suggest_int(param_name, spec["min"], spec["max"])
         elif spec["type"] == "values":
             return self.trial.suggest_categorical(param_name, spec["values"])
+        elif spec["block_size_range"]:
+            return self.trial.suggest_int(param_name, spec["min"] * self.backend.warpSize, spec["max_value"], step=spec.get("step", 1) * self.backend.warpSize)
 
     def _register_kernel_attrs(self, param_name, block_size, blocks_per_sm=1, max_bpsm=1):
         self.trial.set_user_attr(f"{param_name}_block_size", block_size)
@@ -98,6 +100,7 @@ class StepTuner:
     def _compute_kernel_bpsm(self, param_name) -> Optional[int]:
         shm  = self.kernel_stats[param_name]["shared_memory"]
         regs = self.kernel_stats[param_name]["registers"]
+        regs = -1
         lim  = self.backend.GPUlimits
         block_size = self.params[param_name]["block_size"]
         max_bpsm_threads = lim["max_threads_per_sm"] // block_size
