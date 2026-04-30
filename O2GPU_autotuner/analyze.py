@@ -121,19 +121,19 @@ def main():
         print(f"[INFO] Dump written to: {dump_path}")
         opt_mean, opt_std_dev = backend.get_sync_mean_time(dump=dump_path)
         print("\n========== TIMING RESULTS ==========")
-        print(f"[DEFAULT] mean = {def_mean:.6f} s | std = {def_std_dev:.6f} s")
-        print(f"[OPTIMIZED] mean = {opt_mean:.6f} s | std = {opt_std_dev:.6f} s")
+        print(f"[DEFAULT] mean = {def_mean:.6f} ms | std = {def_std_dev:.6f} ms")
+        print(f"[OPTIMIZED] mean = {opt_mean:.6f} ms | std = {opt_std_dev:.6f} ms")
 
         if opt_mean > def_mean:
             slowdown = opt_mean - def_mean
             slowdown_pct = 100.0 * slowdown / def_mean
-            raise RuntimeError(f"\nOptimization FAILED: slower configuration detected\nDefault mean : {def_mean:.6f} s\nOptimized mean: {opt_mean:.6f} s\nSlowdown     : +{slowdown:.6f} s ({slowdown_pct:.2f}%)")
+            raise RuntimeError(f"\nOptimization FAILED: slower configuration detected\nDefault mean : {def_mean:.6f} ms\nOptimized mean: {opt_mean:.6f} ms\nSlowdown     : +{slowdown:.6f} ms ({slowdown_pct:.2f}%)")
 
         gain = def_mean - opt_mean
         speedup = def_mean / opt_mean if opt_mean > 0 else float("inf")
         improvement_pct = 100.0 * gain / def_mean
         print("\nOptimization SUCCESS")
-        print(f"Gain      = {gain:.6f} s")
+        print(f"Gain      = {gain:.6f} ms")
         print(f"Speedup   = {speedup:.3f}x")
         print(f"Improvement = {improvement_pct:.2f}%")
         print("====================================\n")
