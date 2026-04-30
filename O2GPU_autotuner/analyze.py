@@ -113,12 +113,12 @@ def main():
         backend = BenchmarkBackend(workdir)
         backend.dataset = dataset
         backend.num_events = config["nEvents"]
+        print("[INFO] Running backend to verify performance...")
+        backend.update_param_file({}, param_file, dump_path=dump_path)
+        def_mean, def_std_dev = backend.get_sync_mean_time(dump=dump_path)
         backend.update_param_file(reshaped_config, param_file, modified_header_path = header_path, dump_path=dump_path)
         print(f"[INFO] Parameter file written to: {header_path}")
         print(f"[INFO] Dump written to: {dump_path}")
-        print("[INFO] Running backend to verify performance...")
-
-        def_mean, def_std_dev = backend.get_sync_mean_time(dump=None)
         opt_mean, opt_std_dev = backend.get_sync_mean_time(dump=dump_path)
         print("\n========== TIMING RESULTS ==========")
         print(f"[DEFAULT] mean = {def_mean:.6f} s | std = {def_std_dev:.6f} s")

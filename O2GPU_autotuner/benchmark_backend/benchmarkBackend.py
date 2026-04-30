@@ -12,6 +12,7 @@ import shutil
 import json
 from pathlib import Path
 import re
+import tempfile
 
 class BenchmarkBackend:
     def __init__(self, output_folder, backend="auto", debug=False):
@@ -138,12 +139,87 @@ class BenchmarkBackend:
         return maxThreadsPerMultiProcessor
 
     @staticmethod
-    def _AMD_get_kernel_HW_stats():
-        pass
-    
+    def _AMD_get_rtc_HW_stats(hip_files=None):
+        rocm_llvm = None
+        for candidate in ["/opt/rocm/llvm/bin", "/opt/rocm-6.0.0/llvm/bin", "/opt/rocm-5.7.0/llvm/bin"]:
+            if os.path.isdir(candidate):
+                rocm_llvm = candidate
+                break
+        if rocm_llvm is None:
+            try:
+                result = subprocess.run(["find", "/opt", "-name", "clang-offload-bundler", "-maxdepth", "6"], capture_output=True, text=True)
+                found = result.stdout.strip().splitlines()
+                if found:
+                    rocm_llvm = os.path.dirname(found[0])
+            except Exception:
+                return {}
+        if rocm_llvm is None:
+            return {}
+
+        bundler = os.path.join(rocm_llvm, "clang-offload-bundler")
+        readobj = os.path.join(rocm_llvm, "llvm-readobj")
+
+        if hip_files is None:
+            hip_files = glob.glob("/tmp/o2cagpu_rtc_*.o")
+        if not hip_files:
+            return {}
+
+        NUMERIC_FIELDS = re.compile(
+            r"\.(vgpr_count|sgpr_count|vgpr_spill_count|sgpr_spill_count"
+            r"|group_segment_fixed_size|private_segment_fixed_size"
+            r"|wavefront_size):\s+(\d+)"
+        )
+        stats = {}
+        for obj_path in hip_files:
+            try:
+                list_result = subprocess.run([bundler, "--type=o", "--list", "--input", obj_path], capture_output=True, text=True)
+                gpu_target = next((l.strip() for l in list_result.stdout.splitlines() if l.strip() and "host" not in l), None)
+                if gpu_target is None:
+                    continue
+                with tempfile.NamedTemporaryFile(suffix=".o", delete=False) as tmp:
+                    tmp_path = tmp.name
+                try:
+                    subprocess.run([bundler, "--type=o", f"--targets={gpu_target}", f"--output={tmp_path}", "--unbundle", f"--input={obj_path}"], capture_output=True, check=True)
+                    readobj_result = subprocess.run([readobj, "--notes", tmp_path], capture_output=True, text=True, check=True)
+                finally:
+                    os.unlink(tmp_path)
+            except subprocess.CalledProcessError:
+                continue
+            for block_text in re.split(r"^\s*-\s+(?=\.)", readobj_result.stdout, flags=re.MULTILINE):
+                m_name = re.search(r"\.name:\s+(krnl_GPUTPC\S+)", block_text)
+                if not m_name:
+                    continue
+                clean = m_name.group(1).replace("krnl_", "").replace("GPUTPC", "")
+                if clean in stats:
+                    continue
+                fields = {m.group(1): int(m.group(2)) for m in NUMERIC_FIELDS.finditer(block_text)}
+                if "vgpr_count" not in fields or "sgpr_count" not in fields:
+                    continue
+                stats[clean] = {"registers": fields.get("vgpr_count", 0), "sgprs": fields.get("sgpr_count", 0), "shared_memory": fields.get("group_segment_fixed_size", 0)}
+        return stats
+
     @staticmethod
     def _AMD_get_sm_limits():
-        pass
+        cmd = ("echo -e '#include <hip/hip_runtime.h>\\n#include <stdio.h>\\nint main(){hipDeviceProp_t p;hipGetDeviceProperties(&p,0);"
+            "printf(\"%d %d %d %d\\\\n\",p.maxThreadsPerMultiProcessor,p.regsPerMultiprocessor,p.sharedMemPerBlock,p.maxBlocksPerMultiProcessor);return 0;}' "
+            "> /tmp/sm_limits.cpp && hipcc /tmp/sm_limits.cpp -o /tmp/sm_limits && /tmp/sm_limits")
+        try:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
+            max_threads, regs, shm, max_blocks = map(int, result.stdout.strip().split())
+        except (subprocess.CalledProcessError, ValueError):
+            max_threads, regs, shm, max_blocks = 2048, 65536, 65536, 32
+        return {"max_threads_per_sm": max_threads, "registers_per_sm": -1, "shared_mem_per_sm": shm, "max_blocks_per_sm": 24}
+
+    @staticmethod
+    def _AMD_detectFailingKernels(log_file):
+        if not os.path.exists(log_file):
+            return set()
+        with open(log_file, "r") as f:
+            content = f.read()
+        if "error:" not in content:
+            return set()
+        matches = re.findall(r"error:.*?'krnl_GPUTPC(\w+)'", content)
+        return set(matches)
 
     @staticmethod
     def _NVIDIA_get_warp_size():

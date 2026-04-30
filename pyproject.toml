@@ -16,5 +16,6 @@ dependencies = [
 o2gpu-tune = "O2GPU_autotuner.tune:main"
 o2gpu-analyze = "O2GPU_autotuner.analyze:main"
 
-[tool.setuptools]
-packages = ["O2GPU_autotuner", "benchmark_backend"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["O2GPU_autotuner*"]
