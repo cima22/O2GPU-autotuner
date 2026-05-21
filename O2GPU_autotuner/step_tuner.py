@@ -97,9 +97,9 @@ class StepTuner:
         max_bpsm_hw      = lim["max_blocks_per_sm"]
         max_bpsm         = min(max_bpsm_threads, max_bpsm_hw)
         if max_bpsm < 1:
-            return None
+            return None, None
         fraction = self.trial.suggest_float(f"{param_name}_blocks_per_sm_fraction", 0.0, 1.0)
-        blocks_per_sm = min(blocks_per_sm, (int)floor(fraction * (blocks_per_sm + 1)));
+        blocks_per_sm = min(max_bpsm, int(math.floor(fraction * (max_bpsm + 1))));
         return blocks_per_sm, max_bpsm
 
     def update_cache_block_size_limit(self, kernel_name):
