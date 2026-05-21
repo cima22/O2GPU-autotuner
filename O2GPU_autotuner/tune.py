@@ -64,8 +64,7 @@ def estimate_iterations(backend, time_budget_sec):
     print("[INFO] Running empty iteration to estimate timing...")
     t0 = time.time()
     backend.update_param_file({}, TUNER_PARAMETER_FILE, log_file="/tmp/empty_run.log")
-    backend.rtc(rtc_cache=False)
-    backend.update_param_file({}, TUNER_PARAMETER_FILE, log_file="/tmp/empty_run.log")
+    backend.rtc()
     backend.profile_benchmark()
     t1 = time.time()
     iter_time = t1 - t0
