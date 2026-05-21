@@ -89,22 +89,12 @@ class Orchestrator:
         self._log("RTC retry successful")
         return True
     
-    def compute_full_bounds(self):
-        active = self._active_tuners()
-        ok = True
-        for sTuner in active:
-            if not sTuner.compute_blocks_per_sm():
-                sTuner.bad_iteration = True
-                ok = False
-        return ok
-
-    def compile_and_run_with_full_bounds(self):
+    def run_with_full_bounds(self):
         self.timings = {s.name: None for s in self.steps}
         active = self._active_tuners()
         self._log(f"Benchmark run with {len(active)} active steps")
         global_config = self._collect_params(active)
         try:
-            self.backend.update_param_file(global_config, self.header_file, log_file=self.log_file)
             self.backend.profile_benchmark()
         except (RuntimeError, TimeoutError) as e:
             self._log(f"Benchmark failed: {e}")

@@ -2,7 +2,7 @@ CFClusterizer:
   block_size:
     type: range
     min: 1
-    max_value: 512
+    max_value: max_block_size
     step: 1
 CFDecodeZSDenseLink:
   block_size:
@@ -14,13 +14,13 @@ CFDeconvolution:
   block_size:
     type: range
     min: 1
-    max_value: 512
+    max_value: max_block_size
     step: 1
 CFPeakFinder:
   block_size:
     type: range
     min: 1
-    max_value: 512
+    max_value: max_block_size
     step: 1
 CFCheckPadBaseline:
   block_size:
@@ -32,17 +32,17 @@ CFGather:
   block_size:
     type: range
     min: 1
-    max_value: 512
+    max_value: max_block_size
     step: 1
 
 PAR_CF_SCAN_WORKGROUP_SIZE:
     type: block_size_range
     min: 1
-    max_value: 512
+    max_value: max_block_size
     step: 1
 
 PAR_LB_GPUTPCCFNoiseSuppression:
     type: block_size_range
     min: 1
-    max_value: 512
+    max_value: max_block_size
     step: 1

@@ -143,12 +143,7 @@ def main():
             for sTuner in step_tuners.values():
                 sTuner.bad_iteration = True
 
-        ok = orchestrator.compute_full_bounds()
-        if not ok:
-            for sTuner in step_tuners.values():
-                sTuner.bad_iteration = True
-        
-        success = orchestrator.compile_and_run_with_full_bounds()
+        success = orchestrator.run_with_full_bounds()
         if not success:
             for sTuner in step_tuners.values():
                 sTuner.bad_iteration = True

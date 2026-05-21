@@ -201,14 +201,14 @@ class BenchmarkBackend:
     @staticmethod
     def _AMD_get_sm_limits():
         cmd = ("echo -e '#include <hip/hip_runtime.h>\\n#include <stdio.h>\\nint main(){hipDeviceProp_t p;hipGetDeviceProperties(&p,0);"
-            "printf(\"%d %d %d %d\\\\n\",p.maxThreadsPerMultiProcessor,p.regsPerMultiprocessor,p.sharedMemPerBlock,p.maxBlocksPerMultiProcessor);return 0;}' "
+            "printf(\"%d %d %d %d\\\\n\",p.maxThreadsPerMultiProcessor,,p.maxThreadsPerBlock,p.regsPerMultiprocessor,p.sharedMemPerMultiprocessor,p.maxBlocksPerMultiProcessor);return 0;}' "
             "> /tmp/sm_limits.cpp && hipcc /tmp/sm_limits.cpp -o /tmp/sm_limits && /tmp/sm_limits")
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-            max_threads, regs, shm, max_blocks = map(int, result.stdout.strip().split())
+            max_threads, max_threads_per_block, regs, shm, max_blocks = map(int, result.stdout.strip().split())
         except (subprocess.CalledProcessError, ValueError):
-            max_threads, regs, shm, max_blocks = 2048, 65536, 65536, 32
-        return {"max_threads_per_sm": max_threads, "registers_per_sm": -1, "shared_mem_per_sm": shm, "max_blocks_per_sm": 24}
+            max_threads, max_threads_per_block, regs, shm, max_blocks = 2048, 1024, 65536, 102400, 24
+        return {"max_threads_per_sm": max_threads, "max_threads_per_block": max_threads_per_block, "registers_per_sm": -1, "shared_mem_per_sm": shm, "max_blocks_per_sm": max_blocks}
 
     @staticmethod
     def _AMD_detectFailingKernels(log_file):
@@ -248,14 +248,14 @@ class BenchmarkBackend:
     @staticmethod
     def _NVIDIA_get_sm_limits():
         cmd = ("echo '#include <cuda_runtime.h>\n#include <stdio.h>\nint main(){cudaDeviceProp p;cudaGetDeviceProperties(&p,0);"
-            "printf(\"%d %d %d %d\\n\",p.maxThreadsPerMultiProcessor,p.regsPerMultiprocessor,p.sharedMemPerBlock,p.maxBlocksPerMultiProcessor);return 0;}' "
+            "printf(\"%d %d %d %d\\n\",p.maxThreadsPerMultiProcessor,p.maxThreadsPerBlock,p.regsPerMultiprocessor,p.sharedMemPerMultiprocessor,p.maxBlocksPerMultiProcessor);return 0;}' "
             "> /tmp/sm_limits.cu && nvcc /tmp/sm_limits.cu -o /tmp/sm_limits && /tmp/sm_limits")
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-            max_threads, regs, shm, max_blocks = map(int, result.stdout.strip().split())
+            max_threads, max_threads_per_block, regs, shm, max_blocks = map(int, result.stdout.strip().split())
         except (subprocess.CalledProcessError, ValueError):
-            max_threads, regs, shm, max_blocks = 2048, 65536, 49152, 32
-        return {"max_threads_per_sm": max_threads, "registers_per_sm": regs, "shared_mem_per_sm": shm, "max_blocks_per_sm": max_blocks}
+            max_threads, max_threads_per_block, regs, shm, max_blocks = 2048, 1024, 65536, 102400, 24
+        return {"max_threads_per_sm": max_threads, "max_threads_per_block": max_threads_per_block, "registers_per_sm": regs, "shared_mem_per_sm": shm, "max_blocks_per_sm": max_blocks}
 
     @staticmethod
     def _NVIDIA_detectFailingKernels(log_file):
@@ -356,8 +356,8 @@ class BenchmarkBackend:
     def profile_benchmark(self, dataset=None, dump=None, RTC=True, run_log_file=None):
         self.dataset = dataset or self.dataset
         self.param_dump = dump or self.param_dump
-        if RTC and self.backend == "nvidia":
-            rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+        #if RTC and self.backend == "nvidia":
+        #    rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
         command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--preloadEvents"]
         if self.num_events and self.num_events > 0:
@@ -423,10 +423,15 @@ class BenchmarkBackend:
                     else:
                         existing_vals = [str(config["block_size"])]
                 if "blocks_per_sm" in config and config["blocks_per_sm"] is not None:
-                    if len(existing_vals) >= 2:
-                        existing_vals[1] = str(config["blocks_per_sm"])
+                    bpsm = config["blocks_per_sm"]
+                    if bpsm > 0:
+                        if len(existing_vals) >= 2:
+                            existing_vals[1] = str(bpsm)
+                        else:
+                            existing_vals.append(str(bpsm))
                     else:
-                        existing_vals.append(str(config["blocks_per_sm"]))
+                        if len(existing_vals) >= 2:
+                            existing_vals = existing_vals[:1]
                 new_values = ", ".join(existing_vals)
                 line = f"{prefix}{new_values}\n"
                 break

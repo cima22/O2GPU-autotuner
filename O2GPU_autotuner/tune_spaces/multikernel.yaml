@@ -1,11 +1,13 @@
 CompressionKernels_step0attached:
   block_size:
-    type: values
-    values: [32, 64, 96, 128, 160, 192]
+    type: range
+    min: 1
+    max_value: 512
+    step: 1
 
 GMMergerFollowLoopers:
   block_size:
     type: range
     min: 1
-    max_value: 256
+    max_value: max_block_size
     step: 1

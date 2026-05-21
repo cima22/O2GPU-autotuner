@@ -2,5 +2,5 @@ GMMergerTrackFit:
   block_size:
     type: range
     min: 1
-    max_value: 512
+    max_value: max_block_size
     step: 1

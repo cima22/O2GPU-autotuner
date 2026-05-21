@@ -28,9 +28,8 @@ class StepTuner:
             if param_name.startswith("PAR_"):
                 self.par_params[param_name] = self._sample_par(param_name, spec)
                 continue
-            block_size = self._sample_block_size(param_name, spec)
-            self.params[param_name] = {"block_size": block_size, "blocks_per_sm": 1}
-            self.trial.suggest_float(f"{param_name}_blocks_per_sm_fraction", 0.0, 1.0)
+            block_size, min_blocks_per_sm = self._sample_launch_bounds(param_name, spec)
+            self.params[param_name] = {"block_size": block_size, "blocks_per_sm": min_blocks_per_sm}
 
     def get_flat_params(self) -> dict:
         merged = dict(self.par_params)
@@ -50,14 +49,19 @@ class StepTuner:
         elif spec["type"] == "values":
             return self.trial.suggest_categorical(param_name, spec["values"])
         elif spec["type"] == "block_size_range":
-            return self.trial.suggest_int(param_name, spec["min"] * self.backend.warpSize, spec["max_value"], step=spec.get("step", 1) * self.backend.warpSize)
+            effective_max = spec.get("max_value")
+            if effective_max == "max_block_size":
+                effective_max = self.backend.GPUlimits["max_threads_per_block"]
+                if effective_max < spec["min"] * self.backend.warpSize:
+                    raise optuna.TrialPruned()
+            return self.trial.suggest_int(param_name, spec["min"] * self.backend.warpSize, effective_max, step=spec.get("step", 1) * self.backend.warpSize)
 
     def _register_kernel_attrs(self, param_name, block_size, blocks_per_sm=1, max_bpsm=1):
         self.trial.set_user_attr(f"{param_name}_block_size", block_size)
         self.trial.set_user_attr(f"{param_name}_blocks_per_sm", blocks_per_sm)
         self.trial.set_user_attr(f"{param_name}_max_bpsm", max_bpsm)
 
-    def _sample_block_size(self, param_name, spec):
+    def _sample_launch_bounds(self, param_name, spec):
         bs_spec = spec.get("block_size")
         if bs_spec is None:
             raise ValueError(f"block_size not defined for {param_name}")
@@ -68,7 +72,10 @@ class StepTuner:
             self._register_kernel_attrs(param_name, block_size, blocks_per_sm=1, max_bpsm=1)
             return block_size
         elif bs_spec["type"] == "range":
-            effective_max = min(bs_spec["max_value"], cached_max) if cached_max else bs_spec["max_value"]
+            if bs_spec["type"] == "max_block_size":
+                effective_max = self.backend.GPUlimits["max_threads_per_block"]
+            if cached_max is not None:
+                effective_max = min(effective_max, cached_max)
             if effective_max < bs_spec["min"] * self.backend.warpSize:
                 raise optuna.TrialPruned()
             block_size = self.trial.suggest_int(f"{param_name}_block_size", bs_spec["min"] * self.backend.warpSize, effective_max, step=bs_spec.get("step", 1) * self.backend.warpSize)
@@ -80,41 +87,20 @@ class StepTuner:
                 raise optuna.TrialPruned()
             block_size = self.trial.suggest_categorical(f"{param_name}_block_size", warp_values)
         block_size = (block_size // self.backend.warpSize) * self.backend.warpSize
-        self._register_kernel_attrs(param_name, block_size, blocks_per_sm=1, max_bpsm=1)
-        return block_size
+        min_blocks_per_sm, max_bpsm = self._sample_kernel_bpsm(block_size)
+        self._register_kernel_attrs(param_name, block_size, blocks_per_sm=min_blocks_per_sm, max_bpsm=max_bpsm)
+        return block_size, min_blocks_per_sm
 
-    def compute_blocks_per_sm(self):
-        for param_name, v in self.params.items():
-            stats = self.kernel_stats.get(param_name)
-            if stats is None:
-                self.params[param_name]["blocks_per_sm"] = 1
-                self.trial.set_user_attr(f"{param_name}_blocks_per_sm", 1)
-                self.trial.set_user_attr(f"{param_name}_max_bpsm", 1)
-                continue
-            bpsm = self._compute_kernel_bpsm(param_name)
-            if bpsm is None:
-                return False
-            self.params[param_name]["blocks_per_sm"] = bpsm
-        return True
-
-    def _compute_kernel_bpsm(self, param_name) -> Optional[int]:
-        shm  = self.kernel_stats[param_name]["shared_memory"]
-        regs = self.kernel_stats[param_name]["registers"]
-        regs = -1
+    def _sample_kernel_bpsm(self, block_size):
         lim  = self.backend.GPUlimits
-        block_size = self.params[param_name]["block_size"]
         max_bpsm_threads = lim["max_threads_per_sm"] // block_size
         max_bpsm_hw      = lim["max_blocks_per_sm"]
-        max_bpsm_regs    = lim["registers_per_sm"] // (regs * block_size) if regs > 0 else max_bpsm_hw
-        max_bpsm_shm     = lim["shared_mem_per_sm"] // shm if shm > 0 else max_bpsm_hw
-        max_bpsm         = min(max_bpsm_threads, max_bpsm_hw, max_bpsm_regs, max_bpsm_shm)
+        max_bpsm         = min(max_bpsm_threads, max_bpsm_hw)
         if max_bpsm < 1:
             return None
-        fraction = self.trial.params[f"{param_name}_blocks_per_sm_fraction"]
-        blocks_per_sm = max(1, round(fraction * max_bpsm))
-        self.trial.set_user_attr(f"{param_name}_blocks_per_sm", blocks_per_sm)
-        self.trial.set_user_attr(f"{param_name}_max_bpsm", max_bpsm)
-        return blocks_per_sm
+        fraction = self.trial.suggest_float(f"{param_name}_blocks_per_sm_fraction", 0.0, 1.0)
+        blocks_per_sm = min(blocks_per_sm, (int)floor(fraction * (blocks_per_sm + 1)));
+        return blocks_per_sm, max_bpsm
 
     def update_cache_block_size_limit(self, kernel_name):
         current_block_size = self.params.get(kernel_name, {}).get("block_size")
