@@ -30,7 +30,7 @@ StartHitsSorter:
   block_size:
     type: range
     min: 1
-    max_value: max_block_size2
+    max_value: max_block_size
     step: 1
 
 CreateTrackingData:

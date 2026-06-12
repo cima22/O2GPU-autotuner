@@ -2,5 +2,5 @@ CompressionKernels_step1unattached:
   block_size:
     type: range
     min: 1
-    max_value: max_block_size
+    max_value: 512
     step: 1

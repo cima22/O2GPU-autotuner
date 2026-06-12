@@ -201,7 +201,7 @@ class BenchmarkBackend:
     @staticmethod
     def _AMD_get_sm_limits():
         cmd = ("echo -e '#include <hip/hip_runtime.h>\\n#include <stdio.h>\\nint main(){hipDeviceProp_t p;hipGetDeviceProperties(&p,0);"
-            "printf(\"%d %d %d %d\\\\n\",p.maxThreadsPerMultiProcessor,,p.maxThreadsPerBlock,p.regsPerMultiprocessor,p.sharedMemPerMultiprocessor,p.maxBlocksPerMultiProcessor);return 0;}' "
+            "printf(\"%d %d %d %d %d\\\\n\",p.maxThreadsPerMultiProcessor,p.maxThreadsPerBlock,p.regsPerMultiprocessor,p.sharedMemPerMultiprocessor,p.maxBlocksPerMultiProcessor);return 0;}' "
             "> /tmp/sm_limits.cpp && hipcc /tmp/sm_limits.cpp -o /tmp/sm_limits && /tmp/sm_limits")
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
@@ -248,7 +248,7 @@ class BenchmarkBackend:
     @staticmethod
     def _NVIDIA_get_sm_limits():
         cmd = ("echo '#include <cuda_runtime.h>\n#include <stdio.h>\nint main(){cudaDeviceProp p;cudaGetDeviceProperties(&p,0);"
-            "printf(\"%d %d %d %d\\n\",p.maxThreadsPerMultiProcessor,p.maxThreadsPerBlock,p.regsPerMultiprocessor,p.sharedMemPerMultiprocessor,p.maxBlocksPerMultiProcessor);return 0;}' "
+            "printf(\"%d %d %d %d %d\\n\",p.maxThreadsPerMultiProcessor,p.maxThreadsPerBlock,p.regsPerMultiprocessor,p.sharedMemPerMultiprocessor,p.maxBlocksPerMultiProcessor);return 0;}' "
             "> /tmp/sm_limits.cu && nvcc /tmp/sm_limits.cu -o /tmp/sm_limits && /tmp/sm_limits")
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
@@ -366,8 +366,8 @@ class BenchmarkBackend:
             command += ["--runs", str(self.num_runs)]
         if RTC:
             command += ["--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
-        if RTC and self.backend == "nvidia":
-            self._run_and_log(rtc_dump, self.benchmark_backend_log, run_log_file, timeout=90)
+        #if RTC and self.backend == "nvidia":
+            #self._run_and_log(rtc_dump, self.benchmark_backend_log, run_log_file, timeout=90)
         timeout = 60 * self.num_events if self.num_events and self.num_events > 1 else 60 * self.num_runs # stall timeout check
         self._run_and_log(command, self.benchmark_backend_log, run_log_file, timeout=timeout)
         self._postprocess_profiler_output()

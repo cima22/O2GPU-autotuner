@@ -2,6 +2,7 @@
 import optuna
 from dataclasses import dataclass, field
 from typing import Optional
+import math
 
 class StepTuner:
     def __init__(self, name: str, tune_config: dict, backend, output_dir: str, startup: int):
@@ -69,11 +70,10 @@ class StepTuner:
         if bs_spec["type"] == "single":
             block_size = bs_spec["values"][self.backend.backend]
             block_size = (block_size // self.backend.warpSize) * self.backend.warpSize
-            self._register_kernel_attrs(param_name, block_size, blocks_per_sm=1, max_bpsm=1)
-            return block_size
         elif bs_spec["type"] == "range":
-            if bs_spec["type"] == "max_block_size":
-                effective_max = self.backend.GPUlimits["max_threads_per_block"]
+            effective_max = bs_spec.get("max_value")
+            if effective_max == "max_block_size":
+                effective_max = int(self.backend.GPUlimits["max_threads_per_block"])
             if cached_max is not None:
                 effective_max = min(effective_max, cached_max)
             if effective_max < bs_spec["min"] * self.backend.warpSize:
@@ -87,11 +87,11 @@ class StepTuner:
                 raise optuna.TrialPruned()
             block_size = self.trial.suggest_categorical(f"{param_name}_block_size", warp_values)
         block_size = (block_size // self.backend.warpSize) * self.backend.warpSize
-        min_blocks_per_sm, max_bpsm = self._sample_kernel_bpsm(block_size)
+        min_blocks_per_sm, max_bpsm = self._sample_kernel_bpsm(param_name, block_size)
         self._register_kernel_attrs(param_name, block_size, blocks_per_sm=min_blocks_per_sm, max_bpsm=max_bpsm)
         return block_size, min_blocks_per_sm
 
-    def _sample_kernel_bpsm(self, block_size):
+    def _sample_kernel_bpsm(self, param_name, block_size):
         lim  = self.backend.GPUlimits
         max_bpsm_threads = lim["max_threads_per_sm"] // block_size
         max_bpsm_hw      = lim["max_blocks_per_sm"]
