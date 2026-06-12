@@ -23,6 +23,7 @@ class TunerConfig:
     startup: Optional[int]
     time_budget: str
     parameter_file: str
+    backend: str
 
 TUNE_SPACE_DIR = os.getenv("TUNE_SPACE_DIR", os.path.join(os.path.dirname(__file__), "tune_spaces"))
 TUNER_WORKDIR = os.getenv("TUNER_WORKDIR", os.path.join(os.path.dirname(__file__), "../../standalone"))
@@ -82,6 +83,7 @@ def main():
     parser.add_argument("--trials", type=int, help="Override automatically computed number of trials")
     parser.add_argument("--startup", type=int, help="Override automatically computed number of startup iterations")
     parser.add_argument("--time-budget", default="30m", help="Time budget for tuning: minutes (30m), hours (1h), or hh:mm (1:30)")
+    parser.add_argument("--backend", default="auto", help="Force a backend: auto, nvidia, amd")
     args = parser.parse_args()
 
     output_dir = os.path.realpath(args.output)
@@ -96,13 +98,14 @@ def main():
         startup=args.startup,
         time_budget=args.time_budget,
         parameter_file=TUNER_PARAMETER_FILE,
+        backend=args.backend,
     )
     config_path = os.path.join(output_dir, "run_config.yaml")
     with open(config_path, "w") as f:
         yaml.safe_dump(asdict(config), f, sort_keys=False)
 
     os.chdir(TUNER_WORKDIR)
-    backend = BenchmarkBackend(output_dir)
+    backend = BenchmarkBackend(output_dir, backend=args.backend)
     dataset = str(args.dataset)
     backend.dataset = dataset
     if args.nEvents is not None:
