@@ -356,8 +356,8 @@ class BenchmarkBackend:
     def profile_benchmark(self, dataset=None, dump=None, RTC=True, run_log_file=None):
         self.dataset = dataset or self.dataset
         self.param_dump = dump or self.param_dump
-        #if RTC and self.backend == "nvidia":
-        #    rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
+        if RTC and self.backend == "nvidia":
+            rtc_dump = ["./ca", "--noEvents", "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--RTCenable", "1", "--RTCcacheOutput", "1", "--RTCTECHrunTest", "2", "--RTCTECHloadLaunchBoundsFromFile", self.param_dump]
         command = [self.profiler] + self.profiler_options
         command += ["./ca", "-e", self.dataset, "--sync", "-g", "--gpuType", self.gpu_lang, "--memSize", str(self.vRAM), "--preloadEvents"]
         if self.num_events and self.num_events > 0:

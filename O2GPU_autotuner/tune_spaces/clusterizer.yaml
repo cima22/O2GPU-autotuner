@@ -34,6 +34,18 @@ CFGather:
     min: 1
     max_value: max_block_size
     step: 1
+CFHIPTailConnector:
+  block_size:
+    type: range
+    min: 1
+    max_value: max_block_size
+    step: 1
+CFHIPClusterizer:
+  block_size:
+    type: range
+    min: 1
+    max_value: max_block_size
+    step: 1
 
 PAR_CF_SCAN_WORKGROUP_SIZE:
     type: block_size_range

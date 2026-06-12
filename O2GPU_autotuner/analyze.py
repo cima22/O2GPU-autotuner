@@ -40,7 +40,7 @@ def load_trial_from_db(db_path):
     study_name = summaries[0].study_name
     study = optuna.load_study(study_name=study_name, storage=storage)
 
-    trial = study.trials[0]  # 👈 direct access
+    trial = study.trials[0] 
     return study_name, trial.value, trial.params, trial.user_attrs
 
 def reshape_config(flat_params, user_attrs):
@@ -75,6 +75,7 @@ def main():
         return
     config = load_config(workdir)
     dataset = (config["dataset"])
+    backend = str(config["backend"])
     db_files = [f for f in os.listdir(workdir) if f.endswith(".db")]
     if not db_files:
         print("[ERROR] No .db files found")
@@ -111,7 +112,7 @@ def main():
     param_file = os.path.realpath(str(config["parameter_file"]))
     reshaped_config = reshape_config(merged_config, merged_user_attrs)
     try:
-        backend = BenchmarkBackend(workdir)
+        backend = BenchmarkBackend(workdir, backend=backend)
         backend.dataset = dataset
         backend.num_events = config["nEvents"]
         print("[INFO] Running backend to verify performance...")
