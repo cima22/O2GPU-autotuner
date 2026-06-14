@@ -208,7 +208,7 @@ class BenchmarkBackend:
             max_threads, max_threads_per_block, regs, shm, max_blocks = map(int, result.stdout.strip().split())
         except (subprocess.CalledProcessError, ValueError):
             max_threads, max_threads_per_block, regs, shm, max_blocks = 2048, 1024, 65536, 102400, 24
-        return {"max_threads_per_sm": max_threads, "max_threads_per_block": max_threads_per_block, "registers_per_sm": -1, "shared_mem_per_sm": shm, "max_blocks_per_sm": max_blocks}
+        return {"max_threads_per_sm": max_threads, "max_threads_per_block": max_threads_per_block, "registers_per_sm": -1, "shared_mem_per_sm": shm, "max_blocks_per_sm": 24}
 
     @staticmethod
     def _AMD_detectFailingKernels(log_file):

@@ -1,0 +1,8 @@
+output: /shared/O2GPU_autotuner/tuning_results
+dataset: 47kHz
+nEvents: null
+trials: null
+startup: null
+time_budget: 30m
+parameter_file: /shared/O2GPU_autotuner/O2GPU_autotuner/defaults/defaultParamsNVIDIA.h
+backend: auto
