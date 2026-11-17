@@ -381,9 +381,9 @@ class BenchmarkBackend:
                 os.rename(hcc_ops_file, os.path.join(self.output_folder, 'times_raw.csv'))
         if self.backend == "nvidia":
             report_file = os.path.join(self.output_folder, "report.nsys-rep")
-            json_file = os.path.join(self.output_folder, "times_raw.json")
+            json_file = os.path.join(self.output_folder, "times_raw.jsonl")
             if os.path.isfile(report_file):
-                command = f"nsys export --type json --output {json_file} --separate-strings 1 --include-json 1 -f 1 {report_file}"
+                command = f"nsys export --type jsonlines --output {json_file} --include-json 1 -f 1 {report_file}"
                 with open(self.benchmark_backend_log, 'a') as f:
                     subprocess.run(command, shell=True, cwd=self.output_folder, stdout=f, stderr=f)
 
@@ -501,9 +501,9 @@ class BenchmarkBackend:
         stats["DurationMs"] = (stats["Stop_Timestamp"] - stats["Start_Timestamp"]) / 1e6
         stats.rename(columns={'Start_Timestamp': 'StartNs', 'Stop_Timestamp': 'EndNs'}, inplace=True)
         return stats
-    
+
     def _NVIDIA_get_df_from_raw(self):
-        input_file = os.path.join(self.output_folder, 'times_raw.json')
+        input_file = os.path.join(self.output_folder, 'times_raw.jsonl')
         names = []
         events = []
         with open(input_file) as f:
@@ -514,14 +514,11 @@ class BenchmarkBackend:
                 try:
                     row = json.loads(line)
                     if isinstance(row, dict):
-                        if row.get("type") == "String":
+                        if row.get("table") == "StringIds":
                             names.append(row)
-                        elif row.get("Type") == 79:
-                            cuda = row.get("CudaEvent", {})
-                            kernel = cuda.get("kernel", {})
-                            row["demangledName"] = kernel.get("demangledName")
-                            row["startNs"] = cuda.get("startNs")
-                            row["endNs"] = cuda.get("endNs")
+                        elif row.get("table") == "CUPTI_ACTIVITY_KIND_KERNEL":
+                            row["startNs"] = row.get("start")
+                            row["endNs"] = row.get("end")
                             events.append(row)
                 except json.JSONDecodeError:
                     print("Skipping malformed line:", line[:80])
