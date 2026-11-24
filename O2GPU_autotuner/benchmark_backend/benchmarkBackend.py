@@ -15,12 +15,12 @@ import re
 import tempfile
 
 class BenchmarkBackend:
-    def __init__(self, output_folder, backend="auto", debug=False):
+    def __init__(self, output_folder, backend="auto", debug=False, num_runs=3):
         self.output_folder = output_folder
         self.benchmark_backend_log = os.path.join(self.output_folder, 'benchmark_backend.log')
         if not os.path.exists(self.output_folder):
             os.makedirs(self.output_folder)
-        self.num_runs = 3
+        self.num_runs = num_runs
         self.num_events = None
         self.dataset = None
         self.param_dump = "parameters.out"
@@ -638,7 +638,7 @@ class BenchmarkBackend:
         wall_times = [int(x) for x in wall_times]
         if not wall_times:
             return float('inf'), 0.0
-        wall_times_ms = np.array(wall_times) / 1000.0 
+        wall_times_ms = np.array(wall_times) / 1000.0
         return np.mean(wall_times_ms), np.std(wall_times_ms)
 
     def get_step_mean_time_no_RTC(self, step_name, kernels_config, arch, dataset=None, filename="src/GPU/GPUTracking/Definitions/Parameters/GPUParameters.csv"):

@@ -68,6 +68,7 @@ def reshape_config(flat_params, user_attrs):
 def main():
     parser = argparse.ArgumentParser(description="Extract best configs from Optuna studies and write param and header files.")
     parser.add_argument("directory", help="Tuning directory")
+    parser.add_argument("--runs", type=int, default=12, help="Number of benchmark runs to average for the final DEFAULT/OPTIMIZED comparison")
     args = parser.parse_args()
     workdir = os.path.realpath(args.directory)
     if not os.path.isdir(workdir):
@@ -112,7 +113,7 @@ def main():
     param_file = os.path.realpath(str(config["parameter_file"]))
     reshaped_config = reshape_config(merged_config, merged_user_attrs)
     try:
-        backend = BenchmarkBackend(workdir, backend=backend)
+        backend = BenchmarkBackend(workdir, backend=backend, num_runs=args.runs)
         backend.dataset = dataset
         backend.num_events = config["nEvents"]
         print("[INFO] Running backend to verify performance...")
